@@ -1,0 +1,12 @@
+@import "tailwindcss";
+
+@theme {
+  /* Brand palette */
+  --color-primary: #03045e;           /* deep navy – darkest text / headings */
+  --color-secondary: #1F47E6;         /* brand blue – page headings */
+  --color-secondary-mid: #1A3DD0;     /* slightly deeper blue – buttons, active states */
+  --color-secondary-light: #E5E7EB;   /* border gray */
+  --color-secondary-super-light: #ECF3FA; /* tinted bg, hover fills */
+  --color-secondary-background: #F6F8FC; /* page canvas */
+  --color-secondary-gray: #6B7280;    /* muted text */
+}

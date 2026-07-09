@@ -1,0 +1,456 @@
+"use client";
+
+import React, { useEffect, useMemo, useState } from 'react';
+import {
+  Search, Filter, FileSpreadsheet, FileText,
+  MoreHorizontal, Eye, Building2, User, X, Store, Briefcase, Calendar,
+  ChevronRight, ArrowUpDown, Download
+} from "lucide-react";
+import { FactureResponse, AgenciesService, SalesPointsService, KernelAgencyResponse, SalesPointResponse } from '@/src/src2/api';
+import { FactureService } from '@/src/src2/api/services/FactureService';
+import { getStoredSeller } from '@/src/api/session';
+import { toast } from 'sonner';
+import StackableMultiSelect from '@/components/StackableMultiSelect';
+import { exportRowsToCsv } from '@/src/api/Utils/exportCsv';
+
+const TYPE_OPTIONS: { value: FactureResponse.originType; label: string; icon: React.ElementType }[] = [
+  { value: FactureResponse.originType.POS, label: "POS", icon: Store },
+  { value: FactureResponse.originType.SALES, label: "Sales", icon: Briefcase },
+];
+
+const InvoiceJournalPage = () => {
+  const [data, setData] = useState<FactureResponse[]>([]);
+  const [agencies, setAgencies] = useState<KernelAgencyResponse[]>([]);
+  const [salesPoints, setSalesPoints] = useState<SalesPointResponse[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const [filters, setFilters] = useState({
+    search: "",
+    status: "ALL",
+    agencies: [] as string[],
+    salesPoints: [] as string[],
+    types: [] as FactureResponse.originType[],
+    client: "",
+    startDate: "",
+    endDate: "",
+    minAmount: "",
+    maxAmount: "",
+  });
+
+  useEffect(() => {
+    const seller = getStoredSeller();
+    if (!seller?.organizationId) {
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    Promise.all([
+      FactureService.getFacturesByOrganizationEnriched(seller.organizationId),
+      AgenciesService.getAll3(seller.organizationId),
+      SalesPointsService.getAll2(seller.organizationId),
+    ])
+      .then(([facturesRes, agenciesRes, salesPointsRes]) => {
+        setData(facturesRes);
+        setAgencies(agenciesRes);
+        setSalesPoints(salesPointsRes);
+      })
+      .catch(() => toast.error("Failed to load invoice journal data."))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const agencyById = useMemo(() => {
+    const map = new Map<string, KernelAgencyResponse>();
+    agencies.forEach((a) => { if (a.id) map.set(a.id, a); });
+    return map;
+  }, [agencies]);
+
+  const salesPointById = useMemo(() => {
+    const map = new Map<string, SalesPointResponse>();
+    salesPoints.forEach((sp) => { if (sp.id) map.set(sp.id, sp); });
+    return map;
+  }, [salesPoints]);
+
+  const agencyOptions = useMemo(
+    () => agencies.filter((a) => a.id && a.name).map((a) => ({ id: a.id!, label: a.name! })),
+    [agencies]
+  );
+
+  const salesPointOptions = useMemo(
+    () => salesPoints.filter((sp) => sp.id && sp.salesPointName).map((sp) => ({ id: sp.id!, label: sp.salesPointName! })),
+    [salesPoints]
+  );
+
+  const toggleType = (type: FactureResponse.originType) => {
+    setFilters((prev) => ({
+      ...prev,
+      types: prev.types.includes(type) ? prev.types.filter((t) => t !== type) : [...prev.types, type],
+    }));
+  };
+
+  const filteredData = useMemo(() => {
+    return data.filter((item) => {
+      const matchesSearch = !filters.search || (item.numeroFacture ?? '').toLowerCase().includes(filters.search.toLowerCase());
+      const matchesStatus = filters.status === "ALL" || item.etat === filters.status;
+      const matchesAgency = filters.agencies.length === 0 || (!!item.agencyId && filters.agencies.includes(item.agencyId));
+      const matchesSalesPoint = filters.salesPoints.length === 0 || (!!item.session?.salesPointId && filters.salesPoints.includes(item.session.salesPointId));
+      const matchesType = filters.types.length === 0 || (!!item.originType && filters.types.includes(item.originType));
+      const matchesClient = !filters.client || (item.nomClient ?? '').toLowerCase().includes(filters.client.toLowerCase());
+      const itemDate = new Date(item.dateFacturation ?? 0);
+      const start = filters.startDate ? new Date(filters.startDate) : null;
+      const end = filters.endDate ? new Date(filters.endDate) : null;
+      if (end) end.setHours(23, 59, 59, 999);
+      const matchesDate = (!start || itemDate >= start) && (!end || itemDate <= end);
+      const amount = item.montantTTC ?? 0;
+      const min = filters.minAmount ? parseFloat(filters.minAmount) : null;
+      const max = filters.maxAmount ? parseFloat(filters.maxAmount) : null;
+      const matchesAmount = (min === null || amount >= min) && (max === null || amount <= max);
+
+      return matchesSearch && matchesStatus && matchesAgency && matchesSalesPoint && matchesType && matchesClient && matchesDate && matchesAmount;
+    });
+  }, [filters, data]);
+
+  const totalFilteredAmount = useMemo(
+    () => filteredData.reduce((sum, item) => sum + (item.montantTTC ?? 0), 0),
+    [filteredData]
+  );
+
+  const clearAllFilters = () => setFilters({
+    search: "", status: "ALL", agencies: [], salesPoints: [], types: [], client: "",
+    startDate: "", endDate: "", minAmount: "", maxAmount: "",
+  });
+
+  const handleExportCsv = () => {
+    exportRowsToCsv(
+      `client-invoice-journal-${new Date().toISOString().slice(0, 10)}`,
+      [
+        { header: "Invoice Number", accessor: (r: FactureResponse) => r.numeroFacture },
+        { header: "Client", accessor: (r: FactureResponse) => r.nomClient },
+        { header: "Agency", accessor: (r: FactureResponse) => (r.agencyId ? agencyById.get(r.agencyId)?.name : undefined) },
+        { header: "Sale Point", accessor: (r: FactureResponse) => (r.session?.salesPointId ? salesPointById.get(r.session.salesPointId)?.salesPointName : undefined) },
+        { header: "Channel", accessor: (r: FactureResponse) => r.originType },
+        { header: "Date", accessor: (r: FactureResponse) => r.dateFacturation },
+        { header: "Status", accessor: (r: FactureResponse) => r.etat },
+        { header: "Total (TTC)", accessor: (r: FactureResponse) => r.montantTTC },
+        { header: "Resting", accessor: (r: FactureResponse) => r.montantRestant },
+        { header: "Currency", accessor: (r: FactureResponse) => r.devise },
+      ],
+      filteredData
+    );
+  };
+
+  const hasActiveFilters = filters.agencies.length > 0 || filters.salesPoints.length > 0 || filters.types.length > 0
+    || filters.search !== "" || filters.client !== "" || filters.startDate !== "" || filters.endDate !== ""
+    || filters.minAmount !== "" || filters.maxAmount !== "" || filters.status !== "ALL";
+
+  const getStatusColor = (statut?: FactureResponse.etat) => {
+    switch (statut) {
+      case FactureResponse.etat.PAYE: return "bg-emerald-50 text-emerald-600 border-emerald-200";
+      case FactureResponse.etat.BROUILLON: return "bg-secondary-super-light text-secondary-mid border-secondary-light";
+      case FactureResponse.etat.EN_RETARD: return "bg-red-50 text-red-600 border-red-200";
+      case FactureResponse.etat.PARTIELLEMENT_PAYE: return "bg-amber-50 text-amber-600 border-amber-200";
+      case FactureResponse.etat.ANNULE: return "bg-gray-100 text-gray-500 border-gray-200";
+      default: return "bg-slate-50 text-slate-500 border-slate-200";
+    }
+  };
+
+  return (
+    <div className="p-8 bg-secondary-background min-h-screen font-sans">
+      {/* HEADER SECTION */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8">
+        <div>
+          <div className="flex items-center gap-2 text-secondary-gray mb-1">
+            <span className="text-[10px] font-bold uppercase tracking-widest">Finance</span>
+            <ChevronRight size={12} />
+            <span className="text-[10px] font-bold uppercase tracking-widest text-secondary-mid">Journals</span>
+          </div>
+          <h1 className="text-3xl font-black text-primary tracking-tight">Client Invoice Journal</h1>
+          <p className="text-secondary-gray text-sm font-medium">Monitoring organizational invoicing across agencies, sale points and channels.</p>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <button onClick={handleExportCsv} className="flex items-center gap-2 px-5 py-2.5 bg-white border border-secondary-light rounded-xl text-sm font-bold text-primary hover:bg-slate-50 shadow-sm transition-all active:scale-95">
+            <Download size={18} className="text-secondary-mid" />
+            Export CSV
+          </button>
+          <button className="flex items-center gap-2 px-5 py-2.5 bg-secondary text-white rounded-xl text-sm font-bold hover:opacity-90 shadow-lg shadow-secondary/20 transition-all active:scale-95">
+            <FileSpreadsheet size={18} />
+            Excel Report
+          </button>
+        </div>
+      </div>
+
+      {/* FILTER PANEL */}
+      <div className="bg-white p-6 rounded-3xl shadow-sm border border-secondary-light mb-6">
+        {/* Main Filters */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-5">
+          <div className="relative group">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-secondary-gray group-focus-within:text-secondary-mid transition-colors" size={16} />
+            <input
+              type="text"
+              placeholder="Search Invoice #..."
+              className="w-full pl-10 pr-4 py-2.5 bg-secondary-background border border-transparent rounded-xl text-sm focus:bg-white focus:ring-2 focus:ring-secondary-mid/20 focus:border-secondary-mid transition-all outline-none"
+              value={filters.search}
+              onChange={(e) => setFilters({ ...filters, search: e.target.value })}
+            />
+          </div>
+
+          <StackableMultiSelect
+            label="Agency"
+            icon={Building2}
+            placeholder="All Agencies"
+            options={agencyOptions}
+            selected={filters.agencies}
+            onChange={(agencies) => setFilters({ ...filters, agencies })}
+          />
+
+          <StackableMultiSelect
+            label="Sale Point"
+            icon={Store}
+            placeholder="All Sale Points"
+            options={salesPointOptions}
+            selected={filters.salesPoints}
+            onChange={(salesPoints) => setFilters({ ...filters, salesPoints })}
+          />
+
+          <div className="relative">
+            <User className="absolute left-3 top-1/2 -translate-y-1/2 text-secondary-gray" size={16} />
+            <input type="text" placeholder="Client Name..." className="w-full pl-10 pr-4 py-2.5 bg-secondary-background border border-transparent rounded-xl text-sm focus:bg-white focus:ring-2 focus:ring-secondary-mid/20 outline-none transition-all" value={filters.client} onChange={(e) => setFilters({ ...filters, client: e.target.value })} />
+          </div>
+
+          <div className="relative">
+            <select className="w-full px-4 py-2.5 bg-secondary-super-light border border-secondary-light/50 rounded-xl text-sm font-black text-secondary-mid appearance-none text-center cursor-pointer hover:bg-secondary-mid hover:text-white transition-all outline-none" value={filters.status} onChange={(e) => setFilters({ ...filters, status: e.target.value })}>
+              <option value="ALL">Status: All</option>
+              {Object.values(FactureResponse.etat).map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+        </div>
+
+        {/* Type Toggle + Secondary Filters (Intervals) */}
+        <div className="flex flex-col xl:flex-row xl:items-center gap-8 pt-6 border-t border-slate-100 mt-6">
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 text-secondary-gray text-[10px] font-black uppercase tracking-[0.2em]">
+              <Filter size={14} className="text-secondary-mid" /> Channel
+            </div>
+            <div className="flex items-center gap-2">
+              {TYPE_OPTIONS.map((opt) => {
+                const isActive = filters.types.includes(opt.value);
+                const Icon = opt.icon;
+                return (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => toggleType(opt.value)}
+                    className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border-2 transition-all text-[10px] font-black uppercase tracking-widest ${
+                      isActive ? "border-secondary-mid bg-secondary-super-light/50 text-secondary-mid" : "border-gray-100 bg-white text-gray-400"
+                    }`}
+                  >
+                    <Icon size={14} /> {opt.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="hidden xl:block h-8 w-[1px] bg-slate-100"></div>
+
+          <div className="flex items-center gap-6">
+            <div className="flex items-center gap-2 text-secondary-gray text-[10px] font-black uppercase tracking-[0.2em]">
+              <Calendar size={14} className="text-secondary-mid" /> Date Range
+            </div>
+            <div className="flex items-center gap-2 bg-secondary-background p-1 rounded-xl border border-secondary-light/30">
+              <input type="date" className="bg-transparent border-none text-xs font-bold text-primary focus:ring-0 p-2 cursor-pointer" value={filters.startDate} onChange={(e) => setFilters({ ...filters, startDate: e.target.value })} />
+              <div className="h-4 w-[1px] bg-secondary-light"></div>
+              <input type="date" className="bg-transparent border-none text-xs font-bold text-primary focus:ring-0 p-2 cursor-pointer" value={filters.endDate} onChange={(e) => setFilters({ ...filters, endDate: e.target.value })} />
+            </div>
+          </div>
+
+          <div className="hidden xl:block h-8 w-[1px] bg-slate-100"></div>
+
+          <div className="flex items-center gap-6">
+            <div className="flex items-center gap-2 text-secondary-gray text-[10px] font-black uppercase tracking-[0.2em]">
+              <Filter size={14} className="text-secondary-mid" /> Value Range
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2 bg-secondary-background px-3 py-1.5 rounded-xl border border-secondary-light/30">
+                <span className="text-[9px] font-black text-secondary-gray uppercase">Min</span>
+                <input type="number" placeholder="0" className="bg-transparent border-none text-xs font-bold text-primary focus:ring-0 w-20 outline-none" value={filters.minAmount} onChange={(e) => setFilters({ ...filters, minAmount: e.target.value })} />
+              </div>
+              <div className="flex items-center gap-2 bg-secondary-background px-3 py-1.5 rounded-xl border border-secondary-light/30">
+                <span className="text-[9px] font-black text-secondary-gray uppercase">Max</span>
+                <input type="number" placeholder="&infin;" className="bg-transparent border-none text-xs font-bold text-primary focus:ring-0 w-20 outline-none" value={filters.maxAmount} onChange={(e) => setFilters({ ...filters, maxAmount: e.target.value })} />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* ACTIVE FILTERS (CHIPS) */}
+        <div className="flex flex-wrap items-center gap-2 mt-6 min-h-[28px]">
+          {filters.agencies.map((id) => (
+            <div key={`ag-${id}`} className="flex items-center gap-2 px-3 py-1 bg-white border border-secondary-mid/30 rounded-full text-[10px] font-bold text-secondary-mid shadow-sm">
+              <span className="opacity-50 uppercase text-[8px] tracking-widest">Ag</span>
+              <span>{agencyById.get(id)?.name || id}</span>
+              <button onClick={() => setFilters({ ...filters, agencies: filters.agencies.filter((a) => a !== id) })} className="p-0.5 hover:bg-secondary-super-light rounded-full transition-colors text-red-400 hover:text-red-600"><X size={10} /></button>
+            </div>
+          ))}
+          {filters.salesPoints.map((id) => (
+            <div key={`sp-${id}`} className="flex items-center gap-2 px-3 py-1 bg-white border border-secondary-mid/30 rounded-full text-[10px] font-bold text-secondary-mid shadow-sm">
+              <span className="opacity-50 uppercase text-[8px] tracking-widest">SP</span>
+              <span>{salesPointById.get(id)?.salesPointName || id}</span>
+              <button onClick={() => setFilters({ ...filters, salesPoints: filters.salesPoints.filter((s) => s !== id) })} className="p-0.5 hover:bg-secondary-super-light rounded-full transition-colors text-red-400 hover:text-red-600"><X size={10} /></button>
+            </div>
+          ))}
+          {filters.types.map((type) => (
+            <div key={`type-${type}`} className="flex items-center gap-2 px-3 py-1 bg-white border border-secondary-mid/30 rounded-full text-[10px] font-bold text-secondary-mid shadow-sm">
+              <span className="opacity-50 uppercase text-[8px] tracking-widest">Ch</span>
+              <span>{type}</span>
+              <button onClick={() => toggleType(type)} className="p-0.5 hover:bg-secondary-super-light rounded-full transition-colors text-red-400 hover:text-red-600"><X size={10} /></button>
+            </div>
+          ))}
+          {(() => {
+            const labels: any = { search: "Doc", status: "Stat", client: "Cli", startDate: "From", endDate: "To", minAmount: ">", maxAmount: "<" };
+            return Object.entries(filters).map(([key, value]) => {
+              if (Array.isArray(value) || !value || value === "ALL") return null;
+              return (
+                <div key={key} className="flex items-center gap-2 px-3 py-1 bg-white border border-secondary-mid/30 rounded-full text-[10px] font-bold text-secondary-mid shadow-sm">
+                  <span className="opacity-50 uppercase text-[8px] tracking-widest">{labels[key] || key}</span>
+                  <span>{value as string}</span>
+                  <button onClick={() => setFilters((prev) => ({ ...prev, [key]: key === "status" ? "ALL" : "" }))} className="p-0.5 hover:bg-secondary-super-light rounded-full transition-colors text-red-400 hover:text-red-600"><X size={10} /></button>
+                </div>
+              );
+            });
+          })()}
+          {hasActiveFilters && (
+            <button onClick={clearAllFilters} className="text-[10px] font-black text-secondary-gray hover:text-red-500 ml-2 transition-colors flex items-center gap-1 uppercase tracking-tighter">
+              <X size={12} /> Clear Filters
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* DATA TABLE CONTAINER */}
+      <div className="bg-white rounded-[2rem] shadow-sm border border-secondary-light overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-secondary-super-light/30 border-b border-secondary-light">
+                <th className="px-8 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-secondary-gray">
+                  <div className="flex items-center gap-2">Reference <ArrowUpDown size={12} /></div>
+                </th>
+                <th className="px-8 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-secondary-gray">Identity &amp; Origin</th>
+                <th className="px-8 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-secondary-gray text-center">Channel</th>
+                <th className="px-8 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-secondary-gray text-center">Lifecycle</th>
+                <th className="px-8 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-secondary-gray text-right">Financial Impact</th>
+                <th className="px-8 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-secondary-gray text-center">Options</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-50">
+              {loading ? (
+                <tr><td colSpan={6} className="p-24 text-center">
+                  <div className="flex flex-col items-center gap-3">
+                    <div className="w-12 h-12 border-4 border-secondary-super-light border-t-secondary-mid rounded-full animate-spin"></div>
+                    <span className="text-sm font-black text-secondary-gray uppercase tracking-widest">Aggregating Data...</span>
+                  </div>
+                </td></tr>
+              ) : filteredData.length === 0 ? (
+                <tr><td colSpan={6} className="p-24 text-center">
+                  <div className="flex flex-col items-center gap-3">
+                    <FileText size={40} className="text-secondary-mid" />
+                    <span className="text-sm font-black text-secondary-gray uppercase tracking-widest">No invoices found</span>
+                  </div>
+                </td></tr>
+              ) : filteredData.map((item) => {
+                const agency = item.agencyId ? agencyById.get(item.agencyId) : undefined;
+                const salesPoint = item.session?.salesPointId ? salesPointById.get(item.session.salesPointId) : undefined;
+                return (
+                  <tr key={item.idFacture} className="hover:bg-secondary-super-light/40 transition-all group relative border-l-4 border-l-transparent hover:border-l-secondary-mid">
+                    <td className="px-8 py-5">
+                      <div className="flex flex-col">
+                        <span className="font-black text-primary group-hover:text-secondary-mid transition-colors">{item.numeroFacture}</span>
+                        <span className="text-[11px] font-bold text-secondary-gray flex items-center gap-1 mt-0.5"><Calendar size={10} /> {new Date(item.dateFacturation ?? 0).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+                      </div>
+                    </td>
+                    <td className="px-8 py-5">
+                      <div className="flex flex-col gap-1.5">
+                        <div className="flex items-center gap-2 text-sm font-bold text-primary uppercase tracking-tight"><User size={14} className="text-secondary-mid" /> {item.nomClient}</div>
+                        <div className="flex items-center gap-3">
+                          <span className="flex items-center gap-1 text-[10px] font-bold text-secondary-gray bg-slate-100 px-2 py-0.5 rounded-md"><Building2 size={10} /> {agency?.name || "-"}</span>
+                          {salesPoint && (
+                            <span className="flex items-center gap-1 text-[10px] font-bold text-secondary-gray bg-slate-100 px-2 py-0.5 rounded-md"><Store size={10} /> {salesPoint.salesPointName}</span>
+                          )}
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-8 py-5 text-center">
+                      {(() => {
+                        const isPos = item.originType === FactureResponse.originType.POS;
+                        const Icon = isPos ? Store : Briefcase;
+                        return (
+                          <span className={`flex items-center gap-1.5 px-2.5 py-1 w-fit mx-auto border rounded-lg text-[10px] font-black uppercase tracking-widest ${
+                            isPos ? "bg-blue-50 text-blue-600 border-blue-200" : "bg-purple-50 text-purple-600 border-purple-200"
+                          }`}>
+                            <Icon size={11} /> {item.originType || "-"}
+                          </span>
+                        );
+                      })()}
+                    </td>
+                    <td className="px-8 py-5 text-center">
+                      <span className={`px-4 py-1.5 rounded-xl text-[10px] font-black border uppercase tracking-wider ${getStatusColor(item.etat)}`}>
+                        {item.etat}
+                      </span>
+                    </td>
+                    <td className="px-8 py-5 text-right">
+                      <div className="flex flex-col items-end">
+                        <span className="text-lg font-black text-primary">
+                          {item.montantTTC?.toLocaleString()} <span className="text-xs text-secondary-mid ml-1">{item.devise}</span>
+                        </span>
+                        {!!item.montantRestant && item.montantRestant > 0 && (
+                          <span className="text-[9px] text-amber-600 font-black uppercase tracking-widest bg-amber-50 px-2 py-0.5 rounded-md mt-1 italic">
+                            {item.montantRestant.toLocaleString()} resting
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-8 py-5">
+                      <div className="flex items-center justify-center gap-1">
+                        <button title="View Details" className="p-2.5 hover:bg-white hover:text-secondary-mid hover:shadow-sm rounded-xl transition-all text-secondary-gray">
+                          <Eye size={20} />
+                        </button>
+                        <button title="More Options" className="p-2.5 hover:bg-white hover:text-primary hover:shadow-sm rounded-xl transition-all text-secondary-gray">
+                          <MoreHorizontal size={20} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        {/* ANALYTICS FOOTER */}
+        {!loading && (
+          <div className="bg-secondary-super-light/20 border-t border-secondary-light p-6 px-10 flex flex-col md:flex-row justify-between items-center gap-6">
+            <div className="text-xs font-bold text-secondary-gray uppercase tracking-widest">
+              Filtered Results: <span className="text-primary font-black">{filteredData.length}</span> / {data.length}
+            </div>
+
+            <div className="flex items-center gap-6">
+              <div className="h-10 w-[1px] bg-secondary-light hidden md:block"></div>
+              <div className="flex flex-col items-end">
+                <span className="text-[9px] font-black text-secondary-gray uppercase tracking-[0.2em] mb-1">Total Journal Value</span>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-2xl font-black text-secondary">
+                    {totalFilteredAmount.toLocaleString()}
+                  </span>
+                  <span className="text-sm font-black text-secondary-mid">{data[0]?.devise || 'XAF'}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export default InvoiceJournalPage;

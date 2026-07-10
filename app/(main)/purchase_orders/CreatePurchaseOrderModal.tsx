@@ -14,7 +14,8 @@ import PurchaseOrderDetails from "./PurchaseOrderDetails";       // Handles Line
 import POPaintPreviewModal from "./PurchaseOrderPrintPreviewModal";
 import PurchaseOrderLogistics from "./PurchaseOrderLogistics";
 import { mapPurchaseOrderToBonAchatRequest } from "@/src/Mappers/BonAchatMapper";
-import { BonDAchatService } from "@/src/src2/api";
+import { createBonAchatOffline, updateBonAchatOffline } from "@/src/offline/services/bonAchatService";
+import { isFullyOnline } from "@/src/offline/network/connectivity";
 import { toast } from 'sonner';
 import { UpdatedSellerResponse } from "@/src/api/models/UpdatedSellerResponse";
 import { getVisibleFournisseurs } from "@/src/api/scopedTiers";
@@ -111,12 +112,14 @@ const CreatePurchaseOrderModal = ({ isOpen, onClose, producerData, orderData }: 
 
 
     try {
+      const online = await isFullyOnline();
       if (!orderData) {
-        await BonDAchatService.createBonAchat(apiPayload)
+        await createBonAchatOffline(apiPayload);
       } else if (orderData.idPO) {
-        await BonDAchatService.updateBonAchatById(orderData.idPO, apiPayload)
+        await updateBonAchatOffline(orderData.idPO, apiPayload);
       }
-      toast.success(orderData ? "Purchase order updated successfully." : "Purchase order created successfully.")
+      const offlineMsg = !online ? " (sauvegardé localement, synchronisation en attente)" : "";
+      toast.success((orderData ? "Purchase order updated successfully." : "Purchase order created successfully.") + offlineMsg);
       onClose(false);
     } catch (error) {
       console.error("Failed to save purchase order:", error);

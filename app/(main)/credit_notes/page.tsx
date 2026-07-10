@@ -16,6 +16,7 @@ import CreateCreditNoteModal from './CreateCreditNoteModal'
 import PrintPreviewModal from './CreditNotePrintPreviewModal'
 import ShareDocModal from '@/components/ShareDocModal'
 import { useCanEditDocuments } from '@/src/hooks/useCanEditDocuments'
+import SyncStatusIndicator from '@/components/SyncStatusIndicator'
 import { NoteCreditControllerService, ClientsService } from '@/src/src2/api'
 import { getVisibleNoteCredits } from '@/src/api/scopedDocs'
 import { mapCreditNoteArrayToInternalArray } from '@/src/Mappers/CreditNoteMapper'
@@ -242,11 +243,14 @@ const CreditNote = () => {
                   {Object.values(columns).map((value, index) => (
                     <td key={index} className="px-6 py-4 text-gray-600 font-medium whitespace-nowrap">
                       {value === 'etat' ? (
+                        <div className="flex flex-col gap-1">
                         <span className={`px-2 py-1 rounded-md text-[10px] font-black tracking-tighter uppercase ${
                           note.etat === 'APPLIQUÉ' ? 'bg-blue-50 text-blue-600' : 
                           note.etat === 'REMBOURSÉ' ? 'bg-emerald-50 text-emerald-600' : 
                           note.etat === 'ANNULÉ' ? 'bg-red-50 text-red-600' : 'bg-amber-50 text-amber-600'
                         }`}>{note.etat}</span>
+                        <SyncStatusIndicator entityId={note.idCreditNote} entityType="note_credits" />
+                        </div>
                       ) : value === 'montantTTC' ? (
                         <span className="font-bold text-secondary">{note.montantTTC?.toLocaleString()}</span>
                       ) : value === 'docPermission' ? (

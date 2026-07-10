@@ -11,7 +11,8 @@ import { DevisResponse } from "@/src/api";
 import { UpdatedClientResponse } from "@/src/api/models/UpdatedClientResponse";
 import { UpdatedProformaInvoiceResponse,MOCK_PROFORMA_INVOICE } from "@/src/api/models/UpdatedProformaInvoiceResponse";
 import { mapUIToProformaRequest } from "@/src/Mappers/ProformaMapper";
-import { FacturesProformaService } from "@/src/src2/api";
+import { createProformaOffline, updateProformaOffline } from "@/src/offline/services/proformaService";
+import { isFullyOnline } from "@/src/offline/network/connectivity";
 import { toast } from 'sonner';
 import { UpdatedSellerResponse } from "@/src/api/models/UpdatedSellerResponse";
 import { getVisibleClients } from "@/src/api/scopedTiers";
@@ -143,13 +144,17 @@ const CreateProformaInvoiceModal = ({ isOpen, onClose,clientData,ProformaInvoice
     // Add your API call here (e.g., mutate(finalPayload))
 
     try {
+      const online = await isFullyOnline();
       if (ProformaInvoiceData?.idProformaInvoice == undefined) {
-        await FacturesProformaService.createProforma(apiPayload)
+        await createProformaOffline(apiPayload);
       } else if (ProformaInvoice?.idProformaInvoice) {
-        await FacturesProformaService.updateFactureProforma(ProformaInvoice.idProformaInvoice, apiPayload)
+        await updateProformaOffline(ProformaInvoice.idProformaInvoice, apiPayload);
       }
-      toast.success(ProformaInvoiceData?.idProformaInvoice ? "Proforma updated successfully." : "Proforma invoice created successfully.")
-      onClose(false)
+      const offlineMsg = !online ? " (sauvegardé localement, synchronisation en attente)" : "";
+      toast.success(
+        (ProformaInvoiceData?.idProformaInvoice ? "Proforma updated successfully." : "Proforma invoice created successfully.") + offlineMsg
+      );
+      onClose(false);
     } catch (error) {
       console.error("Failed to save proforma invoice:", error);
       toast.error("Failed to save proforma invoice. Please try again.")

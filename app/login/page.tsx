@@ -42,6 +42,12 @@ const LoginForm = () => {
       });
       const sellerData = mapAuthToUpdatedSeller(data);
       localStorage.setItem("seller", JSON.stringify(sellerData));
+
+      // Pré-charger les données de référence pour le mode hors ligne
+      import('@/src/offline/sync/referenceSync').then(({ syncReferenceData }) => {
+        syncReferenceData().catch(console.error);
+      });
+
       if (sellerData.mustChangePassword) {
         // Carried over so the forced password-change screen doesn't have to
         // ask for the email/temporary password the user just typed in here.

@@ -3,9 +3,8 @@
  * @param devis The source quotation data
  * @returns A formatted invoice object
  */
-import { UpdatedFactureResponse } from "../models/UpdatedFactureResponse";
+import { UpdatedFactureResponse, FactureResponse } from "../models/UpdatedFactureResponse";
 import { UpdatedDevisResponse } from "../models/UpdatedDevisResponse";
-import { FactureResponse } from "../models/FactureResponse";
 import { LigneFactureResponse } from "../models/LigneFactureResponse";
 export const mapDevisToFacture = (devis: UpdatedDevisResponse): UpdatedFactureResponse => {
   // Map Quotation Lines to Invoice Lines

@@ -10,7 +10,8 @@ import { UpdatedSellerResponse } from "@/src/api/models/UpdatedSellerResponse";
 import ClientHeader from "./ClientHeader";
 import BackOrderDetails from "./BackOrderDetails";
 import { mapUIToBackOrderRequest } from "@/src/Mappers/BackOrderMapper";
-import { BackOrderService } from "@/src/src2/api/services/BackOrderService";
+import { createBackOrderOffline, updateBackOrderOffline } from "@/src/offline/services/backOrderService";
+import { isFullyOnline } from "@/src/offline/network/connectivity";
 import { toast } from "sonner";
 
 interface Props {
@@ -78,12 +79,14 @@ const CreateBackOrderModal = ({ isOpen, onClose, clientData, backOrderData, clie
     apiPayload.createdBy = seller?.Id;
 
     try {
+      const online = await isFullyOnline();
       if (!backOrderData) {
-        await BackOrderService.createBackOrder(apiPayload);
+        await createBackOrderOffline(apiPayload);
       } else if (backOrderData.id) {
-        await BackOrderService.updateBackOrder(backOrderData.id, apiPayload);
+        await updateBackOrderOffline(backOrderData.id, apiPayload);
       }
-      toast.success(backOrderData ? "Back order updated successfully." : "Back order created successfully.");
+      const offlineMsg = !online ? " (sauvegardé localement, synchronisation en attente)" : "";
+      toast.success((backOrderData ? "Back order updated successfully." : "Back order created successfully.") + offlineMsg);
       onClose(false);
     } catch (error) {
       console.error("Failed to save back order:", error);

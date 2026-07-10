@@ -14,7 +14,11 @@ import GroupAddIcon from '@mui/icons-material/GroupAdd';
 import { CheckCircle2 } from 'lucide-react';
 import { MOCK_FACTURE } from '@/src/api/models/UpdatedFactureResponse';
 import { Search } from 'lucide-react';
-import { DevisResponse, FactureResponse } from '@/src/api';
+import { DevisResponse } from '@/src/api';
+// UpdatedFactureResponse declares its own FactureResponse.etat/modeReglement
+// namespace locally — importing the one from '@/src/api' is a nominally
+// different (if structurally identical) enum and fails assignment checks.
+import { FactureResponse } from '@/src/api/models/UpdatedFactureResponse';
 import { UpdatedSellerResponse } from '@/src/api/models/UpdatedSellerResponse';
 import { getAcronym } from '@/src/src2/api/services/ExternalServices.ts/AcronymService';
 interface Props {

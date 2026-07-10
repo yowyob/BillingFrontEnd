@@ -42,6 +42,7 @@ import ActionButton from '@/components/ActionButton'
 import PermissionBadge from '@/components/PermissionBadge'
 import ShareDocModal from '@/components/ShareDocModal'
 import { useCanEditDocuments } from '@/src/hooks/useCanEditDocuments'
+import SyncStatusIndicator from '@/components/SyncStatusIndicator'
 
 const columns = {
   "Devis Number": "numeroProformaInvoice",
@@ -260,6 +261,7 @@ const ProformaInvoice = () => {
                   {Object.values(columns).map((key, index) => (
                     <td key={index} className="px-6 py-4 text-gray-600 font-medium whitespace-nowrap">
                       {key === 'statut' ? (
+                        <div className="flex flex-col gap-1">
                         <span className={`px-2 py-1 rounded-md text-[10px] font-black tracking-tighter uppercase inline-flex items-center gap-1 ${
                           ProformaInvoice.statut === 'ACCEPTE' ? 'bg-emerald-50 text-emerald-600' : 
                           ProformaInvoice.statut === 'REFUSE' ? 'bg-red-50 text-red-600' : 
@@ -268,6 +270,8 @@ const ProformaInvoice = () => {
                           {ProformaInvoice.statut === 'ACCEPTE' ? <CheckCircle2 size={10}/> : ProformaInvoice.statut === 'REFUSE' ? <XCircle size={10}/> : <Clock size={10}/>}
                           {ProformaInvoice.statut?.replace('_', ' ')}
                         </span>
+                        <SyncStatusIndicator entityId={ProformaInvoice.idProformaInvoice} entityType="proformas" />
+                        </div>
                       ) : key === 'montantTTC' ? (
                         <span className="font-black text-gray-900">
                           {ProformaInvoice.montantTTC?.toLocaleString()} <span className='text-[10px] text-gray-400 uppercase'>{ProformaInvoice.devise || 'XAF'}</span>

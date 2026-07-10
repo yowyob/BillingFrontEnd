@@ -128,8 +128,7 @@ export const mapSalesOrderToDeliveryNote = (order: UpdatedSalesOrderResponse): D
 
 
 
-import { FactureResponse,} from "../models/FactureResponse";
-import { UpdatedFactureResponse } from "../models/UpdatedFactureResponse";
+import { UpdatedFactureResponse, FactureResponse } from "../models/UpdatedFactureResponse";
 import { LigneFactureResponse } from "../models/LigneFactureResponse";
 
 /**

@@ -6,6 +6,9 @@ import LoadingOverlay from './LoadingOverlay'
 import NavigationProgress from './NavigationProgress'
 // Importing this also wires OpenAPI.TOKEN to the stored seller's access token.
 import { getStoredSeller } from '@/src/api/session'
+import OfflineProvider from '@/src/offline/providers/OfflineProvider'
+import { isSessionValidOffline } from '@/src/offline/auth/jwtSession'
+import { isBrowserOnline } from '@/src/offline/network/connectivity'
 
 export default function ClientProviders({ children }: { children: ReactNode }) {
   const router = useRouter()
@@ -17,6 +20,13 @@ export default function ClientProviders({ children }: { children: ReactNode }) {
       router.replace('/login')
       return
     }
+
+    const online = isBrowserOnline()
+    if (!online && !isSessionValidOffline()) {
+      router.replace('/login')
+      return
+    }
+
     if (seller.mustChangePassword) {
       router.replace('/change-password')
       return
@@ -27,12 +37,14 @@ export default function ClientProviders({ children }: { children: ReactNode }) {
   if (!checked) return null
 
   return (
-    <LoadingProvider>
-      <NavigationProgress />
-      <LoadingOverlay />
-      <div style={{ display: 'contents' }}>
-        {children}
-      </div>
-    </LoadingProvider>
+    <OfflineProvider>
+      <LoadingProvider>
+        <NavigationProgress />
+        <LoadingOverlay />
+        <div style={{ display: 'contents' }}>
+          {children}
+        </div>
+      </LoadingProvider>
+    </OfflineProvider>
   )
 }

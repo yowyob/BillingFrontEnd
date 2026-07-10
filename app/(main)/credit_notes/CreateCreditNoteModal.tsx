@@ -13,7 +13,8 @@ import { UpdatedSellerResponse } from "@/src/api/models/UpdatedSellerResponse";
 import ClientHeader from "./ClientHeader";
 import CreditNoteDetails from "./CreditNoteDetails"; // Similar to InvoiceDetails but handles reasons
 import { mapCreditNoteToRequest } from "@/src/Mappers/CreditNoteMapper";
-import { NoteCreditControllerService } from "@/src/src2/api";
+import { createNoteCreditOffline, updateNoteCreditOffline } from "@/src/offline/services/noteCreditService";
+import { isFullyOnline } from "@/src/offline/network/connectivity";
 import { toast } from 'sonner';
 import { getVisibleClients } from "@/src/api/scopedTiers";
 
@@ -106,12 +107,14 @@ const CreateCreditNoteModal = ({ isOpen, onClose, clientData, creditNoteData }: 
     console.log("Saving Credit Note Payload:", finalPayload);
 
     try {
+      const online = await isFullyOnline();
       if (!creditNoteData) {
-        await NoteCreditControllerService.createNoteCredit(apiPayload)
+        await createNoteCreditOffline(apiPayload);
       } else if (creditNoteData.idCreditNote) {
-        await NoteCreditControllerService.updateNoteCredit(creditNoteData.idCreditNote, apiPayload)
+        await updateNoteCreditOffline(creditNoteData.idCreditNote, apiPayload);
       }
-      toast.success(creditNoteData ? "Credit note updated successfully." : "Credit note created successfully.")
+      const offlineMsg = !online ? " (sauvegardé localement, synchronisation en attente)" : "";
+      toast.success((creditNoteData ? "Credit note updated successfully." : "Credit note created successfully.") + offlineMsg);
       onClose(false);
     } catch (error) {
       console.error("Failed to save credit note:", error);

@@ -39,6 +39,7 @@ import ActionButton from '@/components/ActionButton'
 import PermissionBadge from '@/components/PermissionBadge'
 import ShareDocModal from '@/components/ShareDocModal'
 import { useCanEditDocuments } from '@/src/hooks/useCanEditDocuments'
+import SyncStatusIndicator from '@/components/SyncStatusIndicator'
 
 const columns = {
   "DN Number": "deliveryNoteNumber",
@@ -245,6 +246,7 @@ const DeliveryNotes = () => {
                   {Object.values(columns).map((value, index) => (
                     <td key={index} className="px-6 py-4 text-gray-600 font-medium whitespace-nowrap">
                       {value === 'etat' ? (
+                        <div className="flex flex-col gap-1">
                         <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full border text-[10px] font-black tracking-tighter uppercase ${
                           note.etat === DeliveryNoteResponse.etat.ENVOYE ? 'bg-blue-50 text-blue-600 border-blue-100' : 
                           note.etat === DeliveryNoteResponse.etat.ANNULE ? 'bg-red-50 text-red-600 border-red-100' : 
@@ -252,6 +254,8 @@ const DeliveryNotes = () => {
                         }`}>
                           {note.etat === DeliveryNoteResponse.etat.ENVOYE ? <CheckCircle2 size={12}/> : note.etat === DeliveryNoteResponse.etat.ANNULE ? <XCircle size={12}/> : <Clock size={12}/>}
                           {note.etat}
+                        </div>
+                        <SyncStatusIndicator entityId={note.idDN} entityType="bon_livraisons" />
                         </div>
                       ) : value === 'totalAmount' ? (
                         <span className="font-black text-gray-900">

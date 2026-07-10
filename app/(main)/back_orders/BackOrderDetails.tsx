@@ -6,6 +6,7 @@ import { Trash2, Pencil, Plus, Package, ShoppingBag } from "lucide-react";
 import { UpdatedBackOrderResponse, BackOrderLine } from '@/src/api/models/UpdatedBackOrderResponse';
 import { ProductsService } from '@/src/src2/api';
 import { UpdatedProductResponse } from '@/src/api/models/UpdatedProductResponse';
+import { getProductsOfflineFirst } from '@/src/offline/services/referenceService';
 import { toast } from 'sonner';
 
 const inputStyles = "w-full border border-gray-200 rounded-lg outline-none py-2 px-3 focus:ring-2 focus:ring-secondary-mid/10 focus:border-secondary-mid transition-all text-sm text-gray-700 bg-white shadow-sm placeholder:text-gray-300";
@@ -33,7 +34,7 @@ const BackOrderDetails = ({ backOrder, setBackOrder }: Props) => {
   useEffect(() => {
     const fetchProducts = async () => {
       try {
-        const data = await ProductsService.getAllProducts() as unknown as UpdatedProductResponse[];
+        const data = await getProductsOfflineFirst(() => ProductsService.getAllProducts()) as unknown as UpdatedProductResponse[];
         setProducts(data);
       } catch {
         // fall back to empty — non-blocking

@@ -13,6 +13,7 @@ import CreateBackOrderModal from './CreateBackOrderModal'
 import BackOrderPrintPreviewModal from './BackOrderPrintPreviewModal'
 import ShareDocModal from '@/components/ShareDocModal'
 import { useCanEditDocuments } from '@/src/hooks/useCanEditDocuments'
+import SyncStatusIndicator from '@/components/SyncStatusIndicator'
 import { BackOrderService } from '@/src/src2/api/services/BackOrderService'
 import { mapBackOrderArrayToUI } from '@/src/Mappers/BackOrderMapper'
 import { getVisibleClients } from '@/src/api/scopedTiers'
@@ -172,9 +173,12 @@ const BackOrdersPage = () => {
   const renderCell = (key: string, order: UpdatedBackOrderResponse) => {
     if (key === 'statut') {
       return (
+        <div className="flex flex-col gap-1">
         <span className={`px-2 py-1 rounded-md text-[10px] font-black tracking-tighter uppercase ${statusColors[order.statut || ''] || 'bg-gray-50 text-gray-500'}`}>
           {order.statut?.replace(/_/g, ' ') || '—'}
         </span>
+        <SyncStatusIndicator entityId={order.id} entityType="back_orders" />
+        </div>
       )
     }
     if (key === 'lignes') {

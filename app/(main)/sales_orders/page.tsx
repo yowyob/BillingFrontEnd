@@ -39,6 +39,7 @@ import ActionButton from '@/components/ActionButton'
 import PermissionBadge from '@/components/PermissionBadge'
 import ShareDocModal from '@/components/ShareDocModal'
 import { useCanEditDocuments } from '@/src/hooks/useCanEditDocuments'
+import SyncStatusIndicator from '@/components/SyncStatusIndicator'
 
 const columns = {
   "Order #": "numeroSalesOrder",
@@ -243,6 +244,7 @@ const SalesOrders = () => {
                   {Object.values(columns).map((key, index) => (
                     <td key={index} className="px-6 py-4 text-gray-600 font-medium whitespace-nowrap">
                       {key === 'statut' ? (
+                        <div className="flex flex-col gap-1">
                         <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full border text-[10px] font-black tracking-tighter uppercase ${
                           order.statut === SalesOrderResponse.statut.LIVRE ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 
                           order.statut === SalesOrderResponse.statut.ANNULE ? 'bg-red-50 text-red-600 border-red-100' : 
@@ -251,6 +253,8 @@ const SalesOrders = () => {
                           {order.statut === SalesOrderResponse.statut.LIVRE ? <CheckCircle2 size={12}/> : order.statut === SalesOrderResponse.statut.ANNULE ? <XCircle size={12}/> : <Clock size={12}/>}
                           {order.statut}
                         </span>
+                        <SyncStatusIndicator entityId={order.idSalesOrder} entityType="bon_commandes" />
+                        </div>
                       ) : key === 'dateCreation' ? (
                         <span className="text-xs font-bold text-gray-500">
                           {order.dateCreation 

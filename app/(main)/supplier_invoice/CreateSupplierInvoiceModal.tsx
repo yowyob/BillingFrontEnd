@@ -12,7 +12,8 @@ import { UpdatedClientResponse } from "@/src/api/models/UpdatedClientResponse";
 import SupplierHeader from "./SupplierHeader";
 import SupplierInvoiceDetails from "./SupplierInvoiceDetails";
 import { mapInternalToFactureFournisseurCreateRequest } from "@/src/Mappers/SupplierFactureMapper";
-import { FactureFournisseurControllerService } from "@/src/src2/api";
+import { createFactureFournisseurOffline, updateFactureFournisseurOffline } from "@/src/offline/services/factureFournisseurService";
+import { isFullyOnline } from "@/src/offline/network/connectivity";
 import { UpdatedSellerResponse } from "@/src/api/models/UpdatedSellerResponse";
 import { toast } from 'sonner';
 import { getVisibleFournisseurs } from "@/src/api/scopedTiers";
@@ -112,12 +113,14 @@ const CreateSupplierInvoiceModal = ({ isOpen, onClose, supplierData, factureData
 
     const apiPayload=mapInternalToFactureFournisseurCreateRequest(finalPayload)
     try {
+      const online = await isFullyOnline();
       if (!factureData?.idFacture) {
-        await FactureFournisseurControllerService.createFacture1(apiPayload)
+        await createFactureFournisseurOffline(apiPayload)
       } else {
-        await FactureFournisseurControllerService.updateFacture1(factureData.idFacture, apiPayload)
+        await updateFactureFournisseurOffline(factureData.idFacture, apiPayload)
       }
-      toast.success(factureData?.idFacture ? "Supplier invoice updated successfully." : "Supplier invoice created successfully.")
+      const offlineMsg = !online ? " (sauvegardé localement, synchronisation en attente)" : "";
+      toast.success((factureData?.idFacture ? "Supplier invoice updated successfully." : "Supplier invoice created successfully.") + offlineMsg)
       onClose(false);
     } catch (error) {
       console.error("Failed to save supplier invoice:", error);

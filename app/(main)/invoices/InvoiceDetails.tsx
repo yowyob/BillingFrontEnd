@@ -11,6 +11,7 @@ import { Permission, UpdatedSellerResponse } from '@/src/api/models/UpdatedSelle
 import { UpdatedFactureResponse } from '@/src/api/models/UpdatedFactureResponse';
 import SockJS from 'sockjs-client';
 import { ProductsService } from '@/src/src2/api';
+import { getProductsOfflineFirst } from '@/src/offline/services/referenceService';
 import { Client } from '@stomp/stompjs';
 import { toast } from 'sonner';
 const inputStyles = "w-full border border-gray-200 rounded-lg outline-none py-2 px-3 focus:ring-2 focus:ring-secondary-mid/10 focus:border-secondary-mid transition-all text-sm text-gray-700 bg-white shadow-sm placeholder:text-gray-300";
@@ -57,12 +58,14 @@ useEffect(() => {
 
     try {
       console.log("🔄 Fetching products for org:", seller.organizationId);
-      const data = await ProductsService.getProductsByOrganization(seller.organizationId) as unknown as UpdatedProductResponse[];
-      
+      const data = await getProductsOfflineFirst(
+        () => ProductsService.getProductsByOrganization(seller.organizationId)
+      ) as unknown as UpdatedProductResponse[];
+
       // Update both state lists
       setProducts(data);
       console.log(data)
-      
+
     } catch (error) {
       console.error("❌ Failed to fetch products:", error);
       toast.error("Failed to load products.")

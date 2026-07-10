@@ -10,6 +10,7 @@ import SummaryCard from '@/components/SummaryCard';
 import { GoodsReceiptNoteResponse } from '@/src/api/models/GoodsReceiptNote';
 import { ProductsService } from '@/src/src2/api';
 import { getStoredSeller } from '@/src/api/session';
+import { getProductsOfflineFirst } from '@/src/offline/services/referenceService';
 
 // Updated Styles using your theme variables
 const inputStyles = "w-full border border-secondary-light rounded-lg outline-none py-2 px-3 focus:ring-2 focus:ring-secondary/10 focus:border-secondary transition-all text-sm text-primary bg-white shadow-sm placeholder:text-secondary-gray";
@@ -37,7 +38,7 @@ const SupplierInvoiceDetails = ({ supplier, invoice, setInvoice, selectedGRN }: 
   useEffect(() => {
     const orgId = getStoredSeller()?.organizationId;
     if (!orgId) return;
-    ProductsService.getProductsByOrganization(orgId)
+    getProductsOfflineFirst(() => ProductsService.getProductsByOrganization(orgId))
       .then(data => setProduits(data as unknown as UpdatedProductResponse[]))
       .catch(() => {
         // fall back to empty — non-blocking

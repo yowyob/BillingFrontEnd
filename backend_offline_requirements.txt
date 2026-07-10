@@ -1,0 +1,367 @@
+===============================================================================
+MODIFICATIONS BACKEND REQUISES POUR LE MODE OFFLINE-FIRST
+Projet : Billing Service (ERP ComOps) — Complément au frontend
+Date : Juillet 2026
+Destinataires : Équipe Backend Spring Boot WebFlux / Kernel
+===============================================================================
+
+RÉPONSE COURTE : OUI, des modifications backend sont nécessaires.
+
+Le frontend offline-first est implémenté et fonctionne en local (IndexedDB +
+Outbox), mais la synchronisation au retour réseau échouera ou créera des
+doublons si le backend ne respecte pas les contraintes ci-dessous.
+
+Ce document liste les changements par priorité : BLOQUANT, IMPORTANT, RECOMMANDÉ.
+
+
+===============================================================================
+1. MODIFICATIONS BLOQUANTES (sans elles, la sync offline ne marche pas)
+============================================================================---
+
+1.1 ACCEPTER LES UUID GÉNÉRÉS CÔTÉ CLIENT (IDEMPOTENCE)
+-------------------------------------------------------------------------------
+Le frontend génère des UUID v4 via crypto.randomUUID() AVANT toute création
+hors ligne. Ces UUID sont envoyés dans le corps JSON des requêtes POST.
+
+Entités concernées et champs attendus dans les DTO de création :
+
+  Entité              | Champ UUID dans le body POST     | Table PostgreSQL (ex.)
+  --------------------|----------------------------------|----------------------
+  Devis               | idDevis                          | devis.id
+  Facture             | idFacture                        | facture.id
+  Paiement            | idPaiement                       | paiement.id
+  Proforma            | idFactureProforma                | facture_proforma.id
+  Bon de commande     | idBonCommande                    | bon_commande.id
+  Bon de livraison    | idBonLivraison                   | bon_livraison.id
+  Note de crédit      | idNoteCredit                     | note_credit.id
+  Bon d'achat         | idBonAchat                       | bon_achat.id
+  Back order          | idBackOrder                      | back_order.id
+
+ACTION BACKEND :
+  - Ajouter ces champs optionnels dans les DTO *CreateRequest correspondants.
+  - Si l'UUID est fourni : l'utiliser comme clé primaire (INSERT avec ID forcé).
+  - Si l'UUID est absent : comportement actuel (génération serveur).
+  - Si un POST arrive avec un UUID déjà existant pour la même organisation :
+      → Retourner HTTP 200/201 avec la ressource existante (idempotence)
+      → OU HTTP 409 Conflict avec message explicite
+    NE PAS créer un doublon ni générer un nouvel ID.
+
+Exemple Java (pseudo-code R2DBC) :
+  if (request.getIdDevis() != null) {
+      return repository.save(new Devis(request.getIdDevis(), ...)); // upsert-safe
+  }
+
+
+1.2 ENDPOINT DE SANTÉ /api/health
+-------------------------------------------------------------------------------
+Le frontend ping GET /api/health toutes les 30 secondes pour distinguer :
+  - "navigateur en ligne" vs "backend accessible".
+
+ACTION BACKEND :
+  - Exposer GET /api/health (ou /actuator/health mappé sur /api/health)
+  - Réponse : HTTP 200 + JSON minimal { "status": "UP" }
+  - Endpoint public (sans auth) OU accessible avec le JWT courant
+  - Doit être rapide (< 500ms) — pas de requête lourde en base
+
+Sans cet endpoint, le frontend considère le serveur comme indisponible même
+si le réseau fonctionne, et reste en mode lecture locale uniquement.
+
+
+1.3 EN-TÊTE X-Organization-ID (déjà partiellement en place)
+-------------------------------------------------------------------------------
+Toutes les requêtes de synchronisation incluent :
+  Authorization: Bearer <JWT>
+  X-Organization-ID: <UUID organisation>
+  Content-Type: application/json
+
+ACTION BACKEND :
+  - Vérifier que OrganizationFilter lit bien X-Organization-ID sur TOUTES
+    les routes listées en section 3 (pas seulement certaines).
+  - Rejeter avec HTTP 400 si l'en-tête est absent sur les routes protégées.
+  - Vérifier que l'organizationId du JWT / du contexte correspond à l'entité
+    créée (cohérence multi-tenant).
+
+
+1.4 MESSAGES D'ERREUR STRUCTURÉS POUR LES CONFLITS
+-------------------------------------------------------------------------------
+Le frontend classe les erreurs ainsi :
+  - 503 / 502 / 504 / timeout → retry (reste PENDING dans l'outbox)
+  - 400 / 409 / 500 → CONFLICT (alerte utilisateur, intervention requise)
+
+ACTION BACKEND :
+  - Retourner un corps JSON lisible sur les erreurs métier :
+    {
+      "message": "Limite de crédit dépassée pour le client X",
+      "code": "CREDIT_LIMIT_EXCEEDED",
+      "details": { ... }
+    }
+  - Utiliser HTTP 409 Conflict pour les conflits métier (crédit, stock, etc.)
+  - Utiliser HTTP 400 pour les validations de format
+
+Le frontend affiche entry.lastError à l'utilisateur dans le panneau Outbox.
+
+
+===============================================================================
+2. MODIFICATIONS IMPORTANTES (fortement recommandées)
+===============================================================================
+
+2.1 UUID DES LIGNES (lignes de devis, facture, etc.)
+-------------------------------------------------------------------------------
+Le guide offline prévoit des UUID côté client pour chaque ligne de document.
+
+ACTION BACKEND :
+  - Ajouter idLigne (UUID optionnel) dans :
+      LigneDevisCreateRequest
+      LigneFactureCreateRequest
+      LigneProformaRequest
+      LineBonCommande
+      LigneBonLivraisonRequest
+      LigneNoteCredit
+      LigneBonAchatRequest
+      LigneBackOrder
+  - Même logique idempotente que pour les entités parentes.
+
+Note : le frontend n'envoie pas encore systématiquement ces UUID de lignes.
+L'ajout backend prépare une évolution sans breaking change.
+
+
+2.2 MISE À JOUR (PUT) AVEC UUID CLIENT
+-------------------------------------------------------------------------------
+Le frontend envoie PUT sur l'URL avec l'UUID client :
+  PUT /api/devis/{idDevis}
+  PUT /api/factures/{idFacture}
+  PUT /api/factures-proforma/{id}
+  PUT /api/bon-commande/{id}
+  PUT /api/bons-livraison/{id}
+  PUT /api/bons-achat/{id}
+  PUT /api/v1/facturation/note-credits/{id}
+  PUT /api/v1/facturation/back-orders/{id}
+
+ACTION BACKEND :
+  - L'ID dans le path doit correspondre à l'ID en base (UUID client).
+  - Si la ressource n'existe pas encore (sync retardée) : accepter PUT comme
+    upsert OU retourner 404 clair (le frontend retentera après le POST parent).
+  - Ordre FIFO : le parent (CREATE) doit être synchronisé avant UPDATE.
+
+
+2.3 PAIEMENTS — CHAMP idPaiement
+-------------------------------------------------------------------------------
+Endpoint utilisé par le frontend : POST /api/paiement
+(Attention : le guide mentionne /api/paiements au pluriel — le code réel
+utilise /api/paiement, aligné sur l'OpenAPI généré.)
+
+Payload envoyé à la sync :
+  {
+    "idPaiement": "<UUID client>",
+    "idClient": "...",
+    "idFacture": "...",
+    "montant": 15000,
+    "date": "2026-07-09T12:00:00Z",
+    "journal": "VENTES",
+    "modePaiement": "ESPECES",
+    "organizationId": "...",
+    "agencyId": "..."
+  }
+
+ACTION BACKEND :
+  - Accepter idPaiement dans PaiementCreateRequest.
+  - Mettre à jour montantRestant de la facture liée de façon atomique.
+  - Gérer l'idempotence : un même idPaiement ne doit pas débiter deux fois.
+
+
+2.4 DONNÉES DE RÉFÉRENCE — ENDPOINTS DE PULL
+-------------------------------------------------------------------------------
+Au retour en ligne, le frontend écrase les tables locales avec les données
+serveur (stratégie "server wins" pour les références).
+
+Endpoints actuellement appelés :
+
+  GET /api/tiers/clients
+  GET /api/tiers/fournisseurs
+  GET /api/taxes/organisation/{organizationId}
+
+Endpoints documents (lecture cache) :
+
+  GET /api/devis/organisation/{organizationId}
+  GET /api/devis/agence/{agencyId}
+  GET /api/devis/seller/{sellerId}
+  GET /api/factures/organisation/{organizationId}
+  GET /api/factures/agence/{agencyId}
+  GET /api/factures/seller/{sellerId}
+  GET /api/factures-proforma/... (organisation, agence, seller)
+  GET /api/bon-commande/... (organisation, agence, seller)
+  GET /api/bons-livraison/... (organisation, agence, seller)
+  GET /api/bons-achat/... (organisation, agence, seller)
+  GET /api/v1/facturation/note-credits/... (organisation, agence, seller)
+  GET /api/v1/facturation/back-orders/... (organisation, agence, seller)
+  GET /api/paiement/organisation/{organizationId}
+
+ACTION BACKEND :
+  - Ces endpoints doivent rester disponibles et performants.
+  - Optionnel : ajouter un paramètre ?since=<ISO8601> pour sync incrémentale
+    (voir section 4.2).
+
+
+2.5 JWT — SESSION HORS LIGNE
+-------------------------------------------------------------------------------
+Le frontend décode le JWT localement (jwt-decode) pour vérifier exp.
+
+ACTION BACKEND :
+  - S'assurer que le claim exp est présent et fiable.
+  - Durée de vie du token adaptée au terrain (ex: 8h–24h selon politique).
+  - Optionnel : endpoint POST /api/auth/refresh pour prolonger sans re-login.
+  - Si token expiré : HTTP 401 → le frontend redirige vers /login.
+
+
+===============================================================================
+3. TABLEAU RÉCAPITULATIF — ENDPOINTS DE SYNCHRONISATION (OUTBOX)
+===============================================================================
+
+Action Outbox          | Méthode | Endpoint
+-----------------------|---------|------------------------------------------
+CREATE_DEVIS           | POST    | /api/devis
+UPDATE_DEVIS           | PUT     | /api/devis/{idDevis}
+CREATE_FACTURE         | POST    | /api/factures
+UPDATE_FACTURE         | PUT     | /api/factures/{idFacture}
+CREATE_PAIEMENT        | POST    | /api/paiement
+CREATE_PROFORMA        | POST    | /api/factures-proforma
+UPDATE_PROFORMA        | PUT     | /api/factures-proforma/{id}
+CREATE_BON_COMMANDE    | POST    | /api/bon-commande
+UPDATE_BON_COMMANDE    | PUT     | /api/bon-commande/{id}
+CREATE_BON_LIVRAISON   | POST    | /api/bons-livraison
+UPDATE_BON_LIVRAISON   | PUT     | /api/bons-livraison/{id}
+CREATE_NOTE_CREDIT     | POST    | /api/v1/facturation/note-credits
+UPDATE_NOTE_CREDIT     | PUT     | /api/v1/facturation/note-credits/{id}
+CREATE_BON_ACHAT       | POST    | /api/bons-achat
+UPDATE_BON_ACHAT       | PUT     | /api/bons-achat/{id}
+CREATE_BACK_ORDER      | POST    | /api/v1/facturation/back-orders
+UPDATE_BACK_ORDER      | PUT     | /api/v1/facturation/back-orders/{id}
+
+Actions prévues dans le guide mais PAS ENCORE dans l'outbox frontend :
+  POST /api/devis/{id}/validate
+  POST /api/devis/{id}/convert
+  POST /api/factures/{id}/validate
+  POST /api/factures/{id}/comptabiliser
+
+→ À implémenter côté backend d'abord ; le frontend les ajoutera ensuite.
+
+
+===============================================================================
+4. MODIFICATIONS RECOMMANDÉES (amélioration, non bloquantes)
+===============================================================================
+
+4.1 VALIDATIONS MÉTIER DIFFÉRÉES (COMPORTEMENT ATTENDU)
+-------------------------------------------------------------------------------
+Certaines règles ne peuvent être vérifiées hors ligne (crédit client, stock
+temps réel, génération PDF, Kafka, comptabilisation Kernel).
+
+ACTION BACKEND :
+  - Conserver les validations strictes à la sync (c'est voulu).
+  - Retourner des codes d'erreur stables (enum ou constantes) pour que le
+    frontend puisse proposer des actions correctives ciblées.
+
+Exemples :
+  CREDIT_LIMIT_EXCEEDED
+  INSUFFICIENT_STOCK
+  CLIENT_INACTIVE
+  DOCUMENT_ALREADY_VALIDATED
+
+
+4.2 SYNC INCRÉMENTALE (OPTIONNEL — PERFORMANCE)
+-------------------------------------------------------------------------------
+Pour réduire la bande passante au retour en ligne :
+
+  GET /api/devis/organisation/{orgId}?updatedSince=2026-07-09T10:00:00Z
+  GET /api/tiers/clients?updatedSince=...
+
+Retourner uniquement les entités modifiées depuis le timestamp.
+Le frontend pourra migrer vers ce mode dans une version ultérieure.
+
+
+4.3 NUMÉROTATION DES DOCUMENTS (numeroDevis, numeroFacture, etc.)
+-------------------------------------------------------------------------------
+Hors ligne, le frontend peut créer des documents sans numéro officiel.
+
+ACTION BACKEND :
+  - À la création/sync : générer le numéro séquentiel officiel si absent.
+  - Retourner le numéro généré dans la réponse POST.
+  - Le frontend mettra à jour sa copie locale après sync réussie.
+
+
+4.4 CORS ET PWA
+-------------------------------------------------------------------------------
+Si le frontend PWA est servi depuis un domaine différent du backend :
+
+  - Configurer CORS pour autoriser l'origine du frontend.
+  - Autoriser les headers : Authorization, X-Organization-ID, Content-Type.
+
+
+4.5 OPENAPI / SWAGGER
+-------------------------------------------------------------------------------
+Après modification des DTO, régénérer la spec OpenAPI pour que le frontend
+puisse mettre à jour ses types :
+
+  npm run generate:api
+  (input: http://localhost:8080/v3/api-docs)
+
+
+===============================================================================
+5. CE QUI N'A PAS BESOIN DE CHANGER (déjà compatible)
+===============================================================================
+
+  - Architecture multi-tenant via X-Organization-ID (déjà câblé côté frontend).
+  - Authentification Bearer JWT (déjà utilisée).
+  - Endpoints REST existants pour lecture (GET) — réutilisés pour le pull.
+  - Filtrage par organisation / agence / seller (scopedDocs).
+  - Structure générale Spring WebFlux + R2DBC (compatible outbox client).
+
+
+===============================================================================
+6. PLAN DE TESTS BACKEND SUGGÉRÉ
+===============================================================================
+
+Test 1 — Création idempotente
+  POST /api/devis avec idDevis=UUID-1 → 201
+  POST /api/devis avec idDevis=UUID-1 (retry) → 200/201 même ressource, pas de doublon
+
+Test 2 — Ordre FIFO parent/enfant
+  POST /api/factures (idFacture=F1)
+  POST /api/paiement (idPaiement=P1, idFacture=F1) → doit réussir
+  POST /api/paiement (idPaiement=P1, idFacture=F-inexistante) → 400/404
+
+Test 3 — Conflit métier
+  POST /api/factures dépassant limite crédit → 409 + JSON { message, code }
+
+Test 4 — Health check
+  GET /api/health → 200 { "status": "UP" }
+
+Test 5 — Multi-tenant
+  POST avec X-Organization-ID org-A, vérifier que org-B ne voit pas la ressource
+
+Test 6 — JWT expiré
+  Requête avec token expiré → 401
+
+
+===============================================================================
+7. RÉSUMÉ DES PRIORITÉS POUR L'ÉQUIPE BACKEND
+===============================================================================
+
+  PRIORITÉ 1 (Sprint immédiat) :
+    [ ] Accepter UUID client dans tous les DTO Create (9 entités)
+    [ ] Idempotence sur POST (pas de doublons)
+  [ ] GET /api/health
+    [ ] Erreurs 409 structurées (message + code)
+    [ ] idPaiement dans PaiementCreateRequest
+
+  PRIORITÉ 2 (Sprint suivant) :
+    [ ] UUID des lignes dans les DTO
+    [ ] Génération numeroDocument si absent à la sync
+    [ ] Endpoint refresh token (optionnel)
+
+  PRIORITÉ 3 (Évolution) :
+    [ ] Sync incrémentale ?updatedSince=
+    [ ] Endpoints validate/comptabiliser pour outbox future
+
+===============================================================================
+FIN DU DOCUMENT
+===============================================================================

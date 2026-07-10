@@ -26,6 +26,11 @@ export const updateStoredSellerProfileImage = (profileImageUrl: string) => {
   localStorage.setItem(SELLER_STORAGE_KEY, JSON.stringify({ ...seller, profileImageUrl }));
 };
 
+// The generated client (src/src2/api/core/OpenAPI.ts) hard-codes BASE to
+// localhost:8080 — override it here so a deployed build can point at the
+// real Billing backend via env var, same convention as MEDIA_FILE_URL/tokenService.
+OpenAPI.BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+
 // Attaches the logged-in seller's access token to every request made
 // through the generated API client (FactureService, BackOrderService, etc.).
 OpenAPI.TOKEN = async () => getStoredSeller()?.accessToken ?? '';

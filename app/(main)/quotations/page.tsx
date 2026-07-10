@@ -42,6 +42,7 @@ import { useLoading } from '@/components/LoadingContext'
 import ActionButton from '@/components/ActionButton'
 import PermissionBadge from '@/components/PermissionBadge'
 import ShareDocModal from '@/components/ShareDocModal'
+import SyncStatusIndicator from '@/components/SyncStatusIndicator'
 import { useCanEditDocuments } from '@/src/hooks/useCanEditDocuments'
 
 const columns = {
@@ -269,6 +270,7 @@ const Quotation = () => {
                   {Object.values(columns).map((key, index) => (
                     <td key={index} className="px-6 py-4 text-gray-600 font-medium whitespace-nowrap">
                       {key === 'statut' ? (
+                        <div className="flex flex-col gap-1">
                         <span className={`px-2 py-1 rounded-md text-[10px] font-black tracking-tighter uppercase inline-flex items-center gap-1 ${
                           quotation.statut === 'ACCEPTE' ? 'bg-emerald-50 text-emerald-600' : 
                           quotation.statut === 'REFUSE' ? 'bg-red-50 text-red-600' : 
@@ -277,6 +279,8 @@ const Quotation = () => {
                           {quotation.statut === 'ACCEPTE' ? <CheckCircle2 size={10}/> : quotation.statut === 'REFUSE' ? <XCircle size={10}/> : <Clock size={10}/>}
                           {quotation.statut?.replace('_', ' ')}
                         </span>
+                        <SyncStatusIndicator entityId={quotation.idDevis} entityType="devis" />
+                        </div>
                       ) : key === 'montantTTC' ? (
                         <span className="font-black text-gray-900">
                           {quotation.montantTTC?.toLocaleString()} <span className='text-[10px] text-gray-400 uppercase'>{quotation.devise || 'XAF'}</span>

@@ -8,6 +8,7 @@ import { GoodsReceiptNoteResponse,GoodReceiptResponse, GoodsReceiptLineResponse 
 import SummaryCard from '@/components/SummaryCard';
 import { ProductsService } from '@/src/src2/api';
 import { getStoredSeller } from '@/src/api/session';
+import { getProductsOfflineFirst } from '@/src/offline/services/referenceService';
 
 const inputStyles = "w-full border border-gray-200 rounded-lg outline-none py-2 px-3 focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500 transition-all text-sm text-gray-700 bg-white shadow-sm placeholder:text-gray-300";
 const labelStyles = "text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-1 block ml-0.5";
@@ -27,7 +28,7 @@ const GRNDetails = ({ grn, setGrn }: Props) => {
   useEffect(() => {
     const orgId = getStoredSeller()?.organizationId;
     if (!orgId) return;
-    ProductsService.getProductsByOrganization(orgId)
+    getProductsOfflineFirst(() => ProductsService.getProductsByOrganization(orgId))
       .then(data => setProducts(data as unknown as UpdatedProductResponse[]))
       .catch(() => {
         // fall back to empty — non-blocking

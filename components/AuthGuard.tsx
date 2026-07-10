@@ -4,6 +4,8 @@ import React, { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { getStoredSeller } from "@/src/api/session";
 import { hasPageAccess } from "@/src/api/uiPermissions";
+import { isSessionValidOffline } from "@/src/offline/auth/jwtSession";
+import { isBrowserOnline } from "@/src/offline/network/connectivity";
 import { toast } from "sonner";
 
 const AuthGuard = ({ children }: { children: React.ReactNode }) => {
@@ -18,6 +20,14 @@ const AuthGuard = ({ children }: { children: React.ReactNode }) => {
       router.replace("/login");
       return;
     }
+
+    const online = isBrowserOnline();
+    if (!online && !isSessionValidOffline()) {
+      toast.error("Session expirée. Reconnectez-vous lorsque vous serez en ligne.");
+      router.replace("/login");
+      return;
+    }
+
     if (!hasPageAccess(pathname, seller.uiPermissions)) {
       toast.error("You don't have access to that page.");
       router.replace("/dashboard");

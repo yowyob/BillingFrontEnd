@@ -12,7 +12,8 @@ import { UpdatedClientResponse } from "@/src/api/models/UpdatedClientResponse";
 import ClientHeader from "./ClientHeader";
 import GRNDetails from "./GRNDetails";
 import { mapInternalToBondeReceptionCreateRequest } from "@/src/Mappers/GRNMapper";
-import { BondeReceptionControllerService } from "@/src/src2/api";
+import { createBonReceptionOffline, updateBonReceptionOffline } from "@/src/offline/services/bonReceptionService";
+import { isFullyOnline } from "@/src/offline/network/connectivity";
 import { toast } from 'sonner';
 import { UpdatedSellerResponse } from "@/src/api/models/UpdatedSellerResponse";
 import { getVisibleFournisseurs } from "@/src/api/scopedTiers";
@@ -101,12 +102,14 @@ const CreateGRNModal = ({ isOpen, onClose, clientData, grnData }: Props) => {
     console.log("Saving GRN Payload:", finalPayload);
 
     try {
+      const online = await isFullyOnline();
       if (!grnData?.idGRN) {
-        await BondeReceptionControllerService.createBon(apiPayload)
+        await createBonReceptionOffline(apiPayload)
       } else if (grnData.idGRN) {
-        await BondeReceptionControllerService.updateBon(grnData.idGRN, apiPayload)
+        await updateBonReceptionOffline(grnData.idGRN, apiPayload)
       }
-      toast.success(grnData?.idGRN ? "GRN updated successfully." : "GRN created successfully.")
+      const offlineMsg = !online ? " (sauvegardé localement, synchronisation en attente)" : "";
+      toast.success((grnData?.idGRN ? "GRN updated successfully." : "GRN created successfully.") + offlineMsg)
       onClose(false);
     } catch (error) {
       console.error("Failed to save GRN:", error);

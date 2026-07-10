@@ -9,6 +9,7 @@ import { UpdatedDevisResponse } from '@/src/api/models/UpdatedDevisResponse';
 import SummaryCard from '../../../components/SummaryCard';
 import { Permission, UpdatedSellerResponse } from '@/src/api/models/UpdatedSellerResponse';
 import { ProductsService } from '@/src/src2/api';
+import { getProductsOfflineFirst } from '@/src/offline/services/referenceService';
 
 const inputStyles = "w-full border border-gray-200 rounded-lg outline-none py-2 px-3 focus:ring-2 focus:ring-secondary-mid/10 focus:border-secondary-mid transition-all text-sm text-gray-700 bg-white shadow-sm placeholder:text-gray-300";
 const labelStyles = "text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-1 block ml-0.5";
@@ -54,7 +55,7 @@ const QuotationDetails = ({ client, quotation, setQuotation }: Props) => {
   // Load Products for the seller's organization
   useEffect(() => {
     if (!seller?.organizationId) return;
-    ProductsService.getProductsByOrganization(seller.organizationId)
+    getProductsOfflineFirst(() => ProductsService.getProductsByOrganization(seller.organizationId))
       .then(data => setProduits(data as unknown as UpdatedProductResponse[]))
       .catch(() => {
         // fall back to empty — non-blocking

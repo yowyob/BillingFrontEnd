@@ -9,9 +9,10 @@ import { UpdatedClientResponse } from "@/src/api/models/UpdatedClientResponse";
 import ClientHeader from "./ClientHeader";
 import DeliveryNoteDetails from "./DeliveryNoteDetails";
 import DeliveryNoteLogistics from "./DeliveryNoteLogistics";
-import { BonDeLivraisonService } from "@/src/src2/api";
+import { createBonLivraisonOffline, updateBonLivraisonOffline } from "@/src/offline/services/bonLivraisonService";
+import { createBackOrderOffline } from "@/src/offline/services/backOrderService";
+import { isFullyOnline } from "@/src/offline/network/connectivity";
 import { mapDeliveryNoteToRequest } from "@/src/Mappers/DeliveryNoteMapper";
-import { BackOrderService } from "@/src/src2/api/services/BackOrderService";
 import { BackOrderRequest } from "@/src/src2/api/models/BackOrderRequest";
 import { toast } from 'sonner';
 import { UpdatedSellerResponse } from "@/src/api/models/UpdatedSellerResponse";
@@ -154,17 +155,19 @@ const CreateDeliveryNoteModal = ({ isOpen, onClose, clientData, deliveryNoteData
     apiPayload.organizationId = seller?.organizationId;
     apiPayload.agencyId = seller?.agencyId;
     try {
+      const online = await isFullyOnline();
       if (!deliveryNoteData?.idDN) {
-        await BonDeLivraisonService.createBonLivraison(apiPayload);
+        await createBonLivraisonOffline(apiPayload);
       } else {
-        await BonDeLivraisonService.updatedLivraison(deliveryNoteData.idDN!, apiPayload);
+        await updateBonLivraisonOffline(deliveryNoteData.idDN, apiPayload);
       }
 
       if (createBO) {
         await createBackOrderFromDN(payload);
       }
 
-      toast.success(deliveryNoteData ? "Delivery note updated." : "Delivery note created.");
+      const offlineMsg = !online ? " (sauvegardé localement, synchronisation en attente)" : "";
+      toast.success((deliveryNoteData ? "Delivery note updated." : "Delivery note created.") + offlineMsg);
       onClose(true);
     } catch {
       toast.error("Failed to save delivery note. Please try again.");
@@ -184,8 +187,11 @@ const CreateDeliveryNoteModal = ({ isOpen, onClose, clientData, deliveryNoteData
       }));
 
     try {
-      await BackOrderService.createBackOrder({
-        idBonAchat: payload.idSaleOrder ?? '',
+      await createBackOrderOffline({
+        idBonLivraison: payload.idDN ?? '',
+        numeroBonLivraison: payload.deliveryNoteNumber,
+        idClient: payload.idClient,
+        nomClient: payload.nomClient,
         lignes: missingLines,
         statut: BackOrderRequest.statut.EN_ATTENTE,
         notes: `Generated from partial delivery ${payload.deliveryNoteNumber || ''} (SO: ${payload.SaleOrderNumber || ''})`,
@@ -193,7 +199,8 @@ const CreateDeliveryNoteModal = ({ isOpen, onClose, clientData, deliveryNoteData
         agencyId: seller?.agencyId,
         createdBy: seller?.Id,
       });
-      toast.success("Back order created for missing items.");
+      const online = await isFullyOnline();
+      toast.success(`Back order created${!online ? ' (sync en attente)' : ''}.`);
     } catch {
       toast.error("Delivery note saved but back order creation failed.");
     }

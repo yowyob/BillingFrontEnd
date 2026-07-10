@@ -1,0 +1,211 @@
+===============================================================================
+GUIDE TECHNIQUE D'IMPLÉMENTATION DU MODE OFFLINE-FIRST (FRONTEND)
+Projet : ERP ComOps - Module de Facturation (Billing Service)
+Document : Spécifications pour l'équipe Frontend
+Date : Juillet 2026
+===============================================================================
+
+Ce document détaille toutes les informations, stratégies, structures de données
+et protocoles nécessaires pour implémenter l'architecture "Offline-First" sur le
+frontend de l'application de facturation (Billing Service), en lien avec le
+backend Spring Boot WebFlux et le Kernel central de l'ERP.
+
+---
+
+SOMMAIRE :
+1. Principes Fondamentaux de l'Offline-First
+2. Base de Données Locale (Client-Side Storage)
+3. Gestion du Multi-Tenancy (Multi-Organisation)
+4. Gestion des Identifiants (Client-side UUIDs)
+5. Protocole de Synchronisation (Outbox Pattern)
+6. Gestion des Conflits et Erreurs
+7. Interactions avec les APIs Backend (Billing & Kernel)
+8. Directives d'Interface Utilisateur (UI/UX)
+
+---
+
+1. PRINCIPES FONDAMENTAUX DE L'OFFLINE-FIRST
+===============================================================================
+L'objectif est de permettre aux agents commerciaux de travailler sur le terrain
+(créer des devis, générer des factures brouillons, enregistrer des paiements)
+même sans connexion internet. 
+
+* Mode "Offline-First" : L'application interagit TOUJOURS en priorité avec la 
+  base de données locale (IndexedDB). La connexion réseau n'est utilisée que 
+  comme un canal de synchronisation asynchrone en arrière-plan.
+* Données en Lecture Seule (Lookup) : Les données de référence (Tiers/Clients, 
+  Fournisseurs, Produits, Taxes) sont synchronisées depuis le serveur et 
+  stockées localement pour permettre la recherche et l'association hors-ligne.
+* Données en Écriture (Mutations) : Toute création ou modification (Devis, 
+  Factures, Paiements) est enregistrée localement, puis empilée dans une file 
+  d'attente de synchronisation ("Outbox Queue") pour être envoyée au serveur 
+  dès le retour de la connexion.
+
+---
+
+2. BASE DE DONNÉES LOCALE (CLIENT-SIDE STORAGE)
+===============================================================================
+Pour stocker les données sur le navigateur, utilisez IndexedDB (via des wrappers 
+robustes comme Dexie.js, RxDB ou WatermelonDB) pour bénéficier de requêtes 
+performantes et de la gestion des migrations de schémas.
+
+Les tables locales à instancier sont :
+
+A. Tables de référence (Synchronisées depuis le serveur en lecture seule) :
+   1. `tiers_clients` : Copie locale des tiers de type Client (provenant du Kernel).
+      - Attributs principaux : idClient (UUID), raisonSociale, numeroTva, limiteCredit, soldeCourant, codeClient, actif.
+   2. `tiers_fournisseurs` : Copie locale des tiers de type Fournisseur (provenant du Kernel).
+      - Attributs principaux : idFournisseur (UUID), raisonSociale, codeFournisseur, actif.
+   3. `taxes` : Liste des taux de TVA applicables.
+      - Attributs principaux : id (UUID), code, taux (ex: 20.0), description.
+
+B. Tables opérationnelles (Modifiables localement, synchronisées via l'Outbox) :
+   1. `devis` : Devis de vente.
+      - Attributs principaux : idDevis (UUID), codeDevis, idClient (UUID), dateCreation, dateValidite, statut (DRAFT, VALIDATED, ACCEPTED, REJECTED, CONVERTED), montantHt, montantTtc, lignes (JSONB / Array).
+   2. `factures` : Factures de vente.
+      - Attributs principaux : idFacture (UUID), codeFacture, idClient (UUID), dateFacture, statut (DRAFT, VALIDATED, POSTED, PARTIALLY_PAID, PAID, CANCELLED), montantHt, montantTtc, montantRestant, lignes (JSONB / Array).
+   3. `paiements` : Règlements reçus.
+      - Attributs principaux : idPaiement (UUID), idFacture (UUID), idClient (UUID), montant, datePaiement, modePaiement (CASH, CB, TRANSFER, CHEQUE).
+   4. `outbox` : La file de synchronisation des requêtes en attente.
+
+---
+
+3. GESTION DU MULTI-TENANCY (MULTI-ORGANISATION)
+===============================================================================
+Le backend de l'ERP ComOps applique un filtrage strict par organisation via l'en-tête 
+HTTP `X-Organization-ID` (injecté dans le contexte Reactor). Le frontend doit 
+impérativement respecter ce partitionnement :
+
+* Stockage Local cloisonné : Toutes les entités stockées localement doivent 
+  comporter le champ `organizationId` (UUID).
+* Requêtes locales : Toutes les requêtes de lecture locales (IndexedDB) doivent 
+  filtrer sur l'organisation actuellement active (`WHERE organizationId = currentOrgId`).
+* En-tête de Synchronisation : Lors de la synchronisation des données vers le 
+  serveur, chaque requête HTTP doit inclure l'en-tête `X-Organization-ID` 
+  correspondant à l'organisation de l'entité synchronisée.
+
+---
+
+4. GESTION DES IDENTIFIANTS (CLIENT-SIDE UUIDS)
+===============================================================================
+Pour éviter les collisions d'identifiants lors de la synchronisation de données 
+créées par différents clients hors-ligne :
+
+* Pas de clés auto-incrémentées : Toutes les tables doivent utiliser des UUIDs v4.
+* Génération côté Client : C'est le frontend qui génère l'UUID (ex: via la fonction 
+  standard `crypto.randomUUID()`) dès la création d'un Devis, d'une Facture, 
+  d'un Paiement ou d'une Ligne.
+* Clé primaire persistante : Cet UUID généré sur le client sera envoyé au backend 
+  et servira de clé primaire finale dans la base de données PostgreSQL/R2DBC. Le 
+  backend accepte l'insertion forcée d'UUIDs pré-générés.
+
+---
+
+5. PROTOCOLE DE SYNCHRONISATION (OUTBOX PATTERN)
+===============================================================================
+Toutes les écritures (créations, modifications, validations) doivent transiter par 
+la table locale `outbox`.
+
+A. Structure de la table `outbox` :
+   - `id` : UUID unique de la tâche de synchronisation.
+   - `action` : Type d'action (ex: 'CREATE_DEVIS', 'VALIDATE_DEVIS', 'CREATE_FACTURE', 'VALIDATE_FACTURE', 'CREATE_PAIEMENT').
+   - `payload` : Objet JSON contenant les données de la requête (le DTO).
+   - `endpoint` : L'URL relative du backend à appeler (ex: '/api/factures').
+   - `method` : Méthode HTTP (POST, PUT, DELETE).
+   - `headers` : Objet JSON d'en-têtes spécifiques, notamment `X-Organization-ID`.
+   - `timestamp` : Date de création de l'action (tri FIFO).
+   - `status` : État ('PENDING', 'SYNCING', 'FAILED', 'CONFLICT').
+   - `attempts` : Nombre de tentatives d'envoi (entier).
+   - `lastError` : Message d'erreur renvoyé par le serveur en cas d'échec.
+
+B. Algorithme de Synchronisation (Background Worker / Service Worker) :
+   1. Écouter les événements de connectivité réseau (`navigator.onLine`, et 
+      ping périodique de l'endpoint `/api/health` du backend).
+   2. Dès que la connexion est rétablie (statut En Ligne) :
+      a. Récupérer les éléments de `outbox` ordonnés par `timestamp` ASC (FIFO). 
+         L'ordre séquentiel est crucial (ex: on ne peut pas valider une facture 
+         avant de l'avoir créée).
+      b. Pour chaque élément :
+         - Passer le statut à 'SYNCING'.
+         - Exécuter la requête HTTP avec la méthode, l'URL, les headers et le payload.
+         - Si succès (HTTP 2xx) : Supprimer l'élément de `outbox` et mettre à 
+           jour l'état local de l'entité (ex: marquer le devis comme "synchronisé").
+         - Si échec réseau (Timeout, 503, etc.) : Remettre le statut à 'PENDING' 
+           et stopper la boucle de synchronisation pour préserver l'ordre FIFO. 
+           Recommencer après un délai d'attente exponentiel.
+         - Si échec applicatif (HTTP 4xx, 500) : Passer le statut à 'CONFLICT' 
+           ou 'FAILED', enregistrer le message d'erreur et alerter l'utilisateur 
+           (voir Section 6). Ne pas bloquer indéfiniment la file si l'erreur 
+           est définitive, mais demander une intervention.
+
+---
+
+6. GESTION DES CONFLITS ET ERREURS
+===============================================================================
+A. Conflits de Données de Référence (Clients, Produits, Tarifs) :
+   - Règle générale : La vérité du serveur prévaut toujours. Les données des tables 
+     `tiers_clients`, `tiers_fournisseurs` et `taxes` locales doivent être périodiquement 
+     écrasées par les données fraîches reçues du Kernel/Billing via un mécanisme 
+     de pull (polling ou déclenché à la connexion).
+
+B. Échecs de validation métier (ex: Limite de crédit dépassée) :
+   - Si l'agent crée une facture hors-ligne pour un client dont le solde dépasse 
+     la limite de crédit définie dans le Kernel, le serveur renverra une erreur 
+     (HTTP 400 Bad Request ou HTTP 409 Conflict) lors de la synchronisation.
+   - Gestion Frontend :
+     - Marquer l'élément de la file d'attente comme `CONFLICT`.
+     - Notifier l'utilisateur via un centre de notifications ou une bannière 
+       d'avertissement.
+     - Donner le choix à l'utilisateur :
+       1. Modifier la facture localement (ex: réduire la quantité, appliquer 
+          une remise) pour repasser sous le seuil, ce qui met à jour le payload 
+          dans l'outbox et repasse le statut à `PENDING`.
+       2. Supprimer la requête de la file d'attente (annulation de la facture).
+
+---
+
+7. INTERACTIONS AVEC LES APIS BACKEND (BILLING & KERNEL)
+===============================================================================
+Voici les principaux endpoints REST du Billing Service avec lesquels le frontend 
+doit s'interfacer lors de la synchronisation :
+
+* Gestion des Devis (Quotations) :
+  - Création : `POST /api/devis` (Payload : DevisCreateRequest, génère un statut DRAFT)
+  - Validation : `POST /api/devis/{id}/validate` (Passe le statut à VALIDATED)
+  - Conversion : `POST /api/devis/{id}/convert` (Convertit le devis accepté en facture)
+
+* Gestion des Factures (Invoices) :
+  - Création : `POST /api/factures` (Payload : FactureCreateRequest, génère un statut DRAFT)
+  - Validation : `POST /api/factures/{id}/validate` (Calcule taxes finales, génère PDF, publie Kafka, passe en VALIDATED)
+  - Comptabilisation : `POST /api/factures/{id}/comptabiliser` (Envoie les écritures au Kernel, passe en POSTED)
+
+* Enregistrement des Paiements :
+  - Création : `POST /api/paiements` (Payload : PaiementCreateRequest, met à jour le montant restant de la facture)
+
+* Récupération des Données de Tiers (depuis le Kernel via le Billing Service) :
+  - Clients : `GET /api/clients` (Retourne la liste des clients actifs de l'organisation)
+  - Fournisseurs : `GET /api/fournisseurs` (Retourne la liste des fournisseurs actifs)
+
+* En-tête obligatoire pour toutes les requêtes :
+  - `X-Organization-ID`: <UUID_DE_L_ORGANISATION_ACTIVE>
+
+---
+
+8. DIRECTIVES D'INTERFACE UTILISATEUR (UI/UX)
+===============================================================================
+Pour offrir une expérience fluide et transparente à l'utilisateur final :
+
+* Indicateur d'état de connexion :
+  - Afficher un badge visuel clair (ex: "En ligne" en vert / "Hors ligne" en orange).
+  - Indiquer le nombre d'éléments en attente de synchronisation (ex: "3 documents en cours d'envoi...").
+* Retour d'information optimiste (Optimistic UI) :
+  - Lorsqu'un utilisateur crée un devis ou une facture hors-ligne, l'ajouter 
+    immédiatement dans les listes de l'interface avec un statut visuel distinct : 
+    "En attente de synchronisation" ou "Sauvegardé localement".
+  - Ne pas bloquer l'interface par un spinner en attente d'une réponse réseau.
+* Désactivation sélective des fonctionnalités :
+  - Certaines actions complexes ne peuvent pas être finalisées hors-ligne (ex: la 
+    génération effective du PDF officiel ou l'envoi direct d'e-mails). 
+  - Afficher une explication claire : "Ce document sera validé, envoyé au client 
+    et comptabilisé automatiquement dès le retour de votre connexion".
+===============================================================================

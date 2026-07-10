@@ -5,9 +5,10 @@ import { useRouter } from 'next/navigation'
 import DropDown from "@mui/icons-material/ArrowDropDown"
 import SearchIcon from "@mui/icons-material/Search"
 import AddIcon from "@mui/icons-material/Add"
-import { Pencil, Trash2, MoreVertical, Printer, FileText, ReceiptText, Eye, Share2 } from "lucide-react";
+import { Pencil, Trash2, MoreVertical, Printer, FileText, ReceiptText, Eye, Share2, Banknote } from "lucide-react";
 import CreateInvoiceModal from './CreateInvoiceModal'
 import CreateInvoicePrintModal from './InvoicePrintPreviewModal'
+import RegisterPaymentModal from './RegisterPaymentModal'
 import { ClientsService } from '@/src/src2/api'
 // Updated Imports
 
@@ -24,6 +25,7 @@ import { useLoading } from '@/components/LoadingContext'
 import ActionButton from '@/components/ActionButton'
 import PermissionBadge from '@/components/PermissionBadge'
 import ShareDocModal from '@/components/ShareDocModal'
+import SyncStatusIndicator from '@/components/SyncStatusIndicator'
 import { useCanEditDocuments } from '@/src/hooks/useCanEditDocuments'
 // Adjusting Table Columns for Invoices
 const columns = {
@@ -49,6 +51,7 @@ const Factures = () => {
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
   const [isPrintModalOpen, setIsPrintModalOpen] = useState<boolean>(false);
   const [isShareModalOpen, setIsShareModalOpen] = useState<boolean>(false);
+  const [isPaymentModalOpen, setIsPaymentModalOpen] = useState<boolean>(false);
 
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
   const [clickedFacture, setClickedFacture] = useState<UpdatedFactureResponse | undefined>();
@@ -150,6 +153,20 @@ const Factures = () => {
         setIsShareModalOpen(true);
       },
       color: "text-secondary-mid"
+    },
+    { 
+      label: "Register Payment", 
+      icon: <Banknote size={14} />, 
+      action: (f: UpdatedFactureResponse) => {
+        if ((f.montantRestant ?? 0) <= 0) {
+          toast.info('Cette facture est déjà entièrement payée.');
+          return;
+        }
+        setClickedFacture(f);
+        setIsPaymentModalOpen(true);
+      },
+      color: "text-emerald-600",
+      hidden: (f: UpdatedFactureResponse) => (f.montantRestant ?? 0) <= 0,
     },
     { 
       label: "Print PDF", 
@@ -292,12 +309,15 @@ handleAccountingSync(f)
                   {Object.values(columns).map((key, index) => (
                     <td key={index} className="px-6 py-4 text-gray-600 font-medium whitespace-nowrap">
                       {key === 'etat' ? (
+                        <div className="flex flex-col gap-1">
                         <span className={`px-2 py-1 rounded-md text-[10px] font-black tracking-tighter uppercase ${
                           facture.etat === FactureResponse.etat.PAYE ? 'bg-emerald-50 text-emerald-600' :
                           facture.etat === FactureResponse.etat.EN_RETARD ? 'bg-red-50 text-red-600' : 'bg-amber-50 text-amber-600'
                         }`}>
                           {facture.etat}
                         </span>
+                        <SyncStatusIndicator entityId={facture.idFacture} entityType="factures" />
+                        </div>
                       ) : key === 'docPermission' ? (
                         <PermissionBadge permission={facture.docPermission?.permission} />
                       ) : (
@@ -317,7 +337,8 @@ handleAccountingSync(f)
                       <div ref={menuRef} className="absolute right-16 top-1/2 -translate-y-1/2 z-40 bg-white border border-slate-100 rounded-2xl shadow-2xl p-1.5 flex gap-1">
                         {(!canEdit || facture.docPermission?.permission === 'VIEWER' ? [viewOnlyOption]
                           : facture.docPermission?.permission === 'EDITOR' ? [actionOptions[0], viewOnlyOption]
-                          : actionOptions).map((opt, i) => (
+                          : actionOptions.filter((opt) => !('hidden' in opt) || !opt.hidden?.(facture))
+                        ).map((opt, i) => (
                           <ActionButton
                             key={i}
                             label={opt.label}
@@ -351,6 +372,18 @@ handleAccountingSync(f)
         docLabel={clickedFacture?.numeroFacture ? `Invoice ${clickedFacture.numeroFacture}` : undefined}
         onClose={() => setIsShareModalOpen(false)}
       />
+      {isPaymentModalOpen && clickedFacture && (
+        <RegisterPaymentModal
+          isOpen={isPaymentModalOpen}
+          facture={clickedFacture}
+          onClose={() => setIsPaymentModalOpen(false)}
+          onSuccess={() => {
+            getVisibleFactures()
+              .then((data) => setFactures(mapBackendFactureArrayToUpdatedArray(data)))
+              .catch(() => {});
+          }}
+        />
+      )}
       {/* {isModalOpen && <CreateInvoiceModal factureData={clickedFacture} clientData={client} ... />} */}
     </div>
   )

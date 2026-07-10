@@ -10,6 +10,7 @@ import {
 import { UpdatedSellerResponse } from "@/src/api/models/UpdatedSellerResponse";
 import { clearSession, getStoredSeller } from "@/src/api/session";
 import NotificationHeaderIcon from "./NotificationHeaderIcon";
+import OfflineStatusBadge from "./OfflineStatusBadge";
 
 interface Props {
   name: string;
@@ -103,6 +104,8 @@ const Navbar = ({ name, signedIn }: Props) => {
             </div>
 
             <div className="h-6 w-px bg-gray-200 mx-1 hidden sm:block" />
+
+            <OfflineStatusBadge />
 
             <NotificationHeaderIcon Icon={SettingsIcon} path="/settings" />
             

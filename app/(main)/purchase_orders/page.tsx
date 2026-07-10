@@ -41,6 +41,7 @@ import ActionButton from '@/components/ActionButton'
 import PermissionBadge from '@/components/PermissionBadge'
 import ShareDocModal from '@/components/ShareDocModal'
 import { useCanEditDocuments } from '@/src/hooks/useCanEditDocuments'
+import SyncStatusIndicator from '@/components/SyncStatusIndicator'
 
 const columns = {
   "PO #": "poNumber",
@@ -221,6 +222,7 @@ const PurchaseOrders = () => {
                   {Object.values(columns).map((key, index) => (
                     <td key={index} className="px-6 py-4 text-gray-600 font-medium whitespace-nowrap">
                       {key === 'status' ? (
+                        <div className="flex flex-col gap-1">
                         <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase border ${
                           order.status === PurcaseOrderResponse.statut.VALIDE || order.status === PurcaseOrderResponse.statut.LIVRE ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 
                           order.status === PurcaseOrderResponse.statut.ANNULE ? 'bg-red-50 text-red-600 border-red-100' : 
@@ -228,6 +230,8 @@ const PurchaseOrders = () => {
                         }`}>
                           {order.status}
                         </span>
+                        <SyncStatusIndicator entityId={order.idPO} entityType="bon_achats" />
+                        </div>
                       ) : key === 'poDate' || key === 'expectedDeliveryDate' ? (
                         <span className="text-xs font-bold text-gray-500">
                           {order[key as keyof PurchaseOrderResponse] 

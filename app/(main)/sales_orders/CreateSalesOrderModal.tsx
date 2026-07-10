@@ -14,7 +14,8 @@ import { UpdatedSalesOrderResponse } from "@/src/api/models/UpdatedSalesOrder";
 import ClientHeader from "./ClientHeader";
 import SalesOrderDetails from "./SalesOrderDetails";
 import { mapSalesOrderToBonCommandeRequest } from "@/src/Mappers/BonCommandeMapper";
-import { BonCommandeService } from "@/src/src2/api";
+import { createBonCommandeOffline, updateBonCommandeOffline } from "@/src/offline/services/bonCommandeService";
+import { isFullyOnline } from "@/src/offline/network/connectivity";
 import { toast } from 'sonner';
 import { UpdatedSellerResponse } from "@/src/api/models/UpdatedSellerResponse";
 import { getVisibleClients } from "@/src/api/scopedTiers";
@@ -112,12 +113,16 @@ const CreateSalesOrderModal = ({ isOpen, onClose, clientData, orderData }: Props
     
 
     try {
+      const online = await isFullyOnline();
       if (!orderData?.idSalesOrder) {
-        await BonCommandeService.createBonCommande(apiPayload)
+        await createBonCommandeOffline(apiPayload);
       } else {
-        await BonCommandeService.updateBonCommandeById(orderData.idSalesOrder, apiPayload)
+        await updateBonCommandeOffline(orderData.idSalesOrder, apiPayload);
       }
-      toast.success(orderData?.idSalesOrder ? "Sales order updated successfully." : "Sales order created successfully.")
+      const offlineMsg = !online ? " (sauvegardé localement, synchronisation en attente)" : "";
+      toast.success(
+        (orderData?.idSalesOrder ? "Sales order updated successfully." : "Sales order created successfully.") + offlineMsg
+      );
       onClose(false);
     } catch (error) {
       console.error("Failed to save sales order:", error);

@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import DropDown from "@mui/icons-material/ArrowDropDown"
 import SearchIcon from "@mui/icons-material/Search"
 import AddIcon from "@mui/icons-material/Add"
-import { Pencil, Trash2, MoreVertical, Printer, Truck, Eye, Share2 } from "lucide-react";
+import { Pencil, Trash2, MoreVertical, Printer, Truck, Eye, Share2, ReceiptText } from "lucide-react";
 
 // API & Models
 import { FactureResponse, UpdatedSupplierFactureResponse } from '@/src/api/models/UpdatedSupplierFactureResponse'
@@ -154,6 +154,17 @@ const SupplierFactures = () => {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  const handleAccountingSync = async (f: UpdatedSupplierFactureResponse) => {
+    try {
+      if (!f.idFacture) return;
+      await FactureFournisseurControllerService.accountFacture1(f.idFacture);
+      toast.success(`Supplier invoice ${f.numeroFacture} sent to accounting!`);
+    } catch (error) {
+      console.error("Sync error:", error);
+      toast.error("Error occurred when accounting bill");
+    }
+  };
+
   return (
     <div className='max-w-7xl mx-auto p-6 lg:p-10 flex flex-col gap-8 bg-secondary-super-light/20 min-h-screen'>
 
@@ -300,6 +311,12 @@ const SupplierFactures = () => {
                           onClick={() => { setClickedFacture(facture); setIsPrintModalOpen(true); setActiveMenuId(null); }}
                           className="w-10 h-10 flex items-center justify-center rounded-xl hover:bg-slate-50 text-purple-800 transition-all"
                         ><Printer size={14} /></ActionButton>
+
+                        <ActionButton
+                          label="Comptabiliser"
+                          onClick={() => { handleAccountingSync(facture); setActiveMenuId(null); }}
+                          className="w-10 h-10 flex items-center justify-center rounded-xl hover:bg-slate-50 text-orange-600 transition-all"
+                        ><ReceiptText size={14} /></ActionButton>
 
                         <ActionButton
                           label="Delete"

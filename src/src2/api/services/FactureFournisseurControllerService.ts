@@ -102,4 +102,20 @@ export class FactureFournisseurControllerService {
             },
         });
     }
+    /**
+     * @param id
+     * @returns any OK
+     * @throws ApiError
+     */
+    public static accountFacture1(
+        id: string,
+    ): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/facture-fournisseurs/account/{id}',
+            path: {
+                'id': id,
+            },
+        });
+    }
 }

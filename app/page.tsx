@@ -69,9 +69,11 @@ const STEPS = [
 
 const Logo = ({ variant = "dark" }: { variant?: "dark" | "light" }) => (
   <div className="flex items-center gap-2.5">
-    <div className="w-9 h-9 rounded-xl flex items-center justify-center font-black text-white bg-gradient-to-br from-secondary-mid to-primary shadow-lg shadow-secondary-mid/25 text-sm">
-      KSM
-    </div>
+    <img
+      src="/logo.png"
+      alt="KSM Logo"
+      className="w-9 h-9 object-contain"
+    />
     <div className="flex items-baseline gap-1.5">
       <span className={`text-lg font-black tracking-tight ${variant === "dark" ? "text-primary" : "text-white"}`}>Billing</span>
       <span className={`text-[10px] font-bold uppercase tracking-widest ${variant === "dark" ? "text-secondary-gray" : "text-white/50"}`}>by KSM</span>
@@ -90,9 +92,14 @@ const LandingPage = () => {
         <div className="max-w-7xl mx-auto flex items-center justify-between px-6 py-4">
           <Logo />
 
-          <div className="hidden md:flex items-center gap-8">
+          <div className="hidden md:flex items-center gap-6">
             <a href="#workflow" className="text-sm font-bold text-secondary-gray hover:text-primary transition-colors">How it works</a>
-            <a href="#features" className="text-sm font-bold text-secondary-gray hover:text-primary transition-colors">Features</a>
+            <Link href="/features" className="text-sm font-bold text-secondary-gray hover:text-primary transition-colors">Features</Link>
+            <Link href="/pricing" className="text-sm font-bold text-secondary-gray hover:text-primary transition-colors">Pricing</Link>
+            <Link href="/developers" className="text-sm font-bold text-secondary-gray hover:text-primary transition-colors">Developers</Link>
+            <Link href="/docs" className="text-sm font-bold text-secondary-gray hover:text-primary transition-colors">Docs</Link>
+            <Link href="/about" className="text-sm font-bold text-secondary-gray hover:text-primary transition-colors">About</Link>
+            <Link href="/contact" className="text-sm font-bold text-secondary-gray hover:text-primary transition-colors">Contact</Link>
           </div>
 
           <div className="flex items-center gap-3">
@@ -362,7 +369,7 @@ const LandingPage = () => {
 
       {/* FOOTER */}
       <footer className="bg-primary">
-        <div className="max-w-7xl mx-auto px-6 py-14 grid grid-cols-1 md:grid-cols-[1.3fr_1fr_1fr] gap-10">
+        <div className="max-w-7xl mx-auto px-6 py-14 grid grid-cols-1 md:grid-cols-[1.3fr_1fr_1fr_1.1fr] gap-10">
           <div>
             <Logo variant="light" />
             <p className="text-sm text-white/50 font-medium mt-4 max-w-xs leading-relaxed">
@@ -373,14 +380,28 @@ const LandingPage = () => {
             <p className="text-[11px] font-black uppercase tracking-widest text-white/40 mb-4">Product</p>
             <div className="flex flex-col gap-2.5">
               <a href="#workflow" className="text-sm font-bold text-white/70 hover:text-white transition-colors w-fit">How it works</a>
-              <a href="#features" className="text-sm font-bold text-white/70 hover:text-white transition-colors w-fit">Features</a>
-              <Link href="/login" className="text-sm font-bold text-white/70 hover:text-white transition-colors w-fit">Sign In</Link>
+              <Link href="/features" className="text-sm font-bold text-white/70 hover:text-white transition-colors w-fit">Features</Link>
+              <Link href="/pricing" className="text-sm font-bold text-white/70 hover:text-white transition-colors w-fit">Pricing</Link>
+              <Link href="/docs" className="text-sm font-bold text-white/70 hover:text-white transition-colors w-fit">Documentation</Link>
+              <Link href="/help" className="text-sm font-bold text-white/70 hover:text-white transition-colors w-fit">Help &amp; FAQ</Link>
             </div>
           </div>
           <div>
             <p className="text-[11px] font-black uppercase tracking-widest text-white/40 mb-4">Company</p>
             <div className="flex flex-col gap-2.5">
-              <span className="text-sm font-bold text-white/70 w-fit">KSM</span>
+              <Link href="/about" className="text-sm font-bold text-white/70 hover:text-white transition-colors w-fit">About</Link>
+              <Link href="/careers" className="text-sm font-bold text-white/70 hover:text-white transition-colors w-fit">Careers</Link>
+              <Link href="/press" className="text-sm font-bold text-white/70 hover:text-white transition-colors w-fit">Press</Link>
+              <Link href="/contact" className="text-sm font-bold text-white/70 hover:text-white transition-colors w-fit">Contact</Link>
+            </div>
+          </div>
+          <div>
+            <p className="text-[11px] font-black uppercase tracking-widest text-white/40 mb-4">Legal</p>
+            <div className="flex flex-col gap-2.5">
+              <Link href="/legal" className="text-sm font-bold text-white/70 hover:text-white transition-colors w-fit">Mentions légales</Link>
+              <Link href="/privacy" className="text-sm font-bold text-white/70 hover:text-white transition-colors w-fit">Confidentialité</Link>
+              <Link href="/terms" className="text-sm font-bold text-white/70 hover:text-white transition-colors w-fit">Conditions d&apos;utilisation</Link>
+              <Link href="/cookies" className="text-sm font-bold text-white/70 hover:text-white transition-colors w-fit">Cookies</Link>
             </div>
           </div>
         </div>
